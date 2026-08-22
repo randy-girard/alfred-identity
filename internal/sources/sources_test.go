@@ -65,6 +65,13 @@ func TestHostFromLegacyURLAndDialURL(t *testing.T) {
 	if got := HostFromLegacyURL(""); got != "" {
 		t.Fatalf("%q", got)
 	}
+	if got := HostFromLegacyURL("not a url ://"); got == "" {
+		// NormalizeHost may still return something; just exercise fallback path
+		_ = got
+	}
+	if got := HostFromLegacyURL("plain-host:8181"); got != "plain-host:8181" {
+		t.Fatalf("fallback %q", got)
+	}
 	src := Source{Host: "guild.example.com:8181"}
 	got, err := src.DialURL()
 	if err != nil || got != "wss://guild.example.com:8181/ws/sso" {
