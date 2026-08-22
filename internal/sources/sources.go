@@ -332,42 +332,6 @@ func preferPlainWS(hostport string) bool {
 	return h == "localhost" || strings.HasSuffix(h, ".local")
 }
 
-// NormalizeSourceFetchURL turns a guild origin or path into the sso-source.json URL.
-// Accepts:
-//   https://host/sso-source.json
-//   https://host/
-//   https://host
-func NormalizeSourceFetchURL(raw string) (string, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return "", fmt.Errorf("url required")
-	}
-	if !strings.Contains(raw, "://") {
-		lower := strings.ToLower(raw)
-		if strings.HasPrefix(lower, "127.") || strings.HasPrefix(lower, "localhost") ||
-			strings.HasPrefix(lower, "[::1]") || strings.HasPrefix(lower, "10.") ||
-			strings.HasPrefix(lower, "192.168.") || strings.HasPrefix(lower, "172.") {
-			raw = "http://" + raw
-		} else {
-			raw = "https://" + raw
-		}
-	}
-	u, err := url.Parse(raw)
-	if err != nil || u.Host == "" {
-		return "", fmt.Errorf("invalid url")
-	}
-	path := strings.TrimSuffix(u.Path, "/")
-	switch {
-	case path == "/sso-source.json" || strings.HasSuffix(path, "/sso-source.json"):
-		u.Path = "/sso-source.json"
-	default:
-		u.Path = "/sso-source.json"
-	}
-	u.RawQuery = ""
-	u.Fragment = ""
-	return u.String(), nil
-}
-
 // ParseImportSources reads one or more distributable SSO source definitions from JSON.
 // Accepted shapes:
 //   {"name","host","token?","notes?"}

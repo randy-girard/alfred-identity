@@ -3,10 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"net"
-	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -1056,33 +1054,13 @@ func (a *App) SaveSource(src sources.Source) (SourceDTO, error) {
 	return sourceDTO(saved), nil
 }
 
-// PreviewSourceURL fetches a guild /sso-source.json (or origin URL) and
-// returns parsed source(s) for the add-source form. Nothing is saved.
-func (a *App) PreviewSourceURL(rawURL string) ([]SourceImportPreview, error) {
-	fetchURL, err := sources.NormalizeSourceFetchURL(rawURL)
-	if err != nil {
-		return nil, err
+// PreviewSourceJSON parses pasted source JSON for the add-source form. Nothing is saved.
+func (a *App) PreviewSourceJSON(raw string) ([]SourceImportPreview, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, fmt.Errorf("json required")
 	}
-	ctx, cancel := context.WithTimeout(a.ctx, 15*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fetchURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/json")
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("fetch source: %w", err)
-	}
-	defer res.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
-	if err != nil {
-		return nil, fmt.Errorf("read source: %w", err)
-	}
-	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		return nil, fmt.Errorf("fetch source: HTTP %d", res.StatusCode)
-	}
-	parsed, err := sources.ParseImportSources(body)
+	parsed, err := sources.ParseImportSources([]byte(raw))
 	if err != nil {
 		return nil, err
 	}

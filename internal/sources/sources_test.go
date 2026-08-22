@@ -84,23 +84,6 @@ func TestHostFromLegacyURLAndDialURL(t *testing.T) {
 	}
 }
 
-func TestNormalizeSourceFetchURL(t *testing.T) {
-	cases := map[string]string{
-		"http://127.0.0.1:8181":                       "http://127.0.0.1:8181/sso-source.json",
-		"http://127.0.0.1:8181/":                      "http://127.0.0.1:8181/sso-source.json",
-		"http://127.0.0.1:8181/sso-source.json":       "http://127.0.0.1:8181/sso-source.json",
-		"http://127.0.0.1:8181/admin/sso-source.json": "http://127.0.0.1:8181/sso-source.json",
-		"127.0.0.1:8181":                              "http://127.0.0.1:8181/sso-source.json",
-		"https://identity.example.com":                "https://identity.example.com/sso-source.json",
-	}
-	for in, want := range cases {
-		got, err := NormalizeSourceFetchURL(in)
-		if err != nil || got != want {
-			t.Fatalf("NormalizeSourceFetchURL(%q)=%q err=%v want %q", in, got, err, want)
-		}
-	}
-}
-
 func TestParseImportSources(t *testing.T) {
 	one, err := ParseImportSources([]byte(`{"name":"Guild","host":"guild.example.com:8181","notes":"hi"}`))
 	if err != nil || len(one) != 1 || one[0].Name != "Guild" || one[0].Host != "guild.example.com:8181" {
