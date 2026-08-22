@@ -69,3 +69,35 @@ func TestEnableCreatesWithoutPriorAndSkipsExistingBak(t *testing.T) {
 		t.Fatalf("bak should be preserved: %q %v", got, err)
 	}
 }
+
+func TestReadWriteAndEnsureBackup(t *testing.T) {
+	dir := t.TempDir()
+	cur, err := Read(dir)
+	if err != nil || cur != "" {
+		t.Fatalf("missing current: %q err=%v", cur, err)
+	}
+	if HasBackup(dir) {
+		t.Fatal("no backup yet")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "eqhost.txt"), []byte("ORIG\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Write(dir, "NEW\n"); err != nil {
+		t.Fatal(err)
+	}
+	bak, err := ReadBackup(dir)
+	if err != nil || bak != "ORIG\n" {
+		t.Fatalf("backup %q err=%v", bak, err)
+	}
+	got, err := Read(dir)
+	if err != nil || got != "NEW\n" {
+		t.Fatalf("current %q err=%v", got, err)
+	}
+	if err := RestoreBackup(dir); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := Read(dir)
+	if err != nil || restored != "ORIG\n" {
+		t.Fatalf("restored %q err=%v", restored, err)
+	}
+}
