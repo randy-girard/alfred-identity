@@ -42,3 +42,30 @@ func TestDisableWithoutBackup(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestEnableCreatesWithoutPriorAndSkipsExistingBak(t *testing.T) {
+	dir := t.TempDir()
+	if err := Enable(dir, "127.0.0.1:1"); err != nil {
+		t.Fatal(err)
+	}
+	if Describe(dir) == "" {
+		t.Fatal("expected describe")
+	}
+	if Describe(filepath.Join(dir, "missing")) != "" {
+		t.Fatal("missing dir describe")
+	}
+	bak := filepath.Join(dir, "eqhost.txt.bak")
+	if err := os.WriteFile(bak, []byte("KEEP"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "eqhost.txt"), []byte("ORIG"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Enable(dir, "127.0.0.1:2"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(bak)
+	if err != nil || string(got) != "KEEP" {
+		t.Fatalf("bak should be preserved: %q %v", got, err)
+	}
+}

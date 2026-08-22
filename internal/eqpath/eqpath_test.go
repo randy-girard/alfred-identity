@@ -49,3 +49,29 @@ func TestLogsDirDefaultWhenMissing(t *testing.T) {
 		t.Fatalf("got %q want %q", got, want)
 	}
 }
+
+func TestLogsDirEmptyAndLowercase(t *testing.T) {
+	if _, err := LogsDir(""); err == nil {
+		t.Fatal("empty")
+	}
+	if _, err := LogsDir("  "); err == nil {
+		t.Fatal("whitespace")
+	}
+	root := t.TempDir()
+	logs := filepath.Join(root, "logs")
+	if err := os.MkdirAll(logs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LogsDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Case-insensitive filesystems may resolve as Logs or logs.
+	if got != logs && got != filepath.Join(root, "Logs") {
+		t.Fatalf("got %q", got)
+	}
+	st, err := os.Stat(got)
+	if err != nil || !st.IsDir() {
+		t.Fatalf("resolved path not a dir: %v", err)
+	}
+}
