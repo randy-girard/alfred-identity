@@ -2,6 +2,7 @@ package eqhost
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -77,7 +78,7 @@ func Write(eqDir, content string) error {
 // Enable writes Host=listen into eqhost.txt after backing up to .bak when needed.
 // It returns changed=false when eqhost.txt already points at hostPort.
 func Enable(eqDir, hostPort string) (changed bool, err error) {
-	hostPort = strings.TrimSpace(hostPort)
+	hostPort = eqhostClientHost(hostPort)
 	if hostPort == "" {
 		return false, fmt.Errorf("listen address required")
 	}
@@ -95,25 +96,55 @@ func Enable(eqDir, hostPort string) (changed bool, err error) {
 	return true, nil
 }
 
+// eqhostClientHost is the address EQ should connect to (p99-login-proxy parity).
+func eqhostClientHost(listenAddr string) string {
+	listenAddr = strings.TrimSpace(listenAddr)
+	host, port, err := net.SplitHostPort(listenAddr)
+	if err != nil {
+		return listenAddr
+	}
+	host = strings.TrimSpace(host)
+	if host == "" || host == "0.0.0.0" || strings.EqualFold(host, "localhost") || host == "::1" {
+		host = "127.0.0.1"
+	}
+	return net.JoinHostPort(host, port)
+}
+
 func eqhostMatchesHost(content, hostPort string) bool {
 	content = strings.TrimSpace(content)
 	if content == "" {
 		return false
 	}
-	if !strings.Contains(content, section) {
-		return false
-	}
-	return strings.EqualFold(parseHostLine(content), hostPort)
-}
-
-func parseHostLine(content string) string {
+	want := eqhostClientHost(hostPort)
 	for _, line := range strings.Split(content, "\n") {
 		line = strings.TrimSpace(line)
-		if len(line) >= 5 && strings.EqualFold(line[:5], "host=") {
-			return strings.TrimSpace(line[5:])
+		if len(line) < 5 || !strings.EqualFold(line[:5], "host=") {
+			continue
+		}
+		if hostPortsEqual(strings.TrimSpace(line[5:]), want) {
+			return true
 		}
 	}
-	return ""
+	return false
+}
+
+func hostPortsEqual(a, b string) bool {
+	ah, ap, ok1 := splitHostPortNormalized(a)
+	bh, bp, ok2 := splitHostPortNormalized(b)
+	return ok1 && ok2 && ah == bh && ap == bp
+}
+
+func splitHostPortNormalized(hostPort string) (host, port string, ok bool) {
+	hostPort = strings.TrimSpace(hostPort)
+	h, p, err := net.SplitHostPort(hostPort)
+	if err != nil {
+		return "", "", false
+	}
+	h = strings.ToLower(strings.TrimSpace(h))
+	if h == "localhost" || h == "::1" {
+		h = "127.0.0.1"
+	}
+	return h, p, true
 }
 
 // RestoreBackup restores eqhost.txt from .bak when present.

@@ -91,6 +91,36 @@ func TestEnableSkipsWhenHostAlreadyMatches(t *testing.T) {
 	}
 }
 
+func TestEnableSkipsLocalhostHostLine(t *testing.T) {
+	dir := t.TempDir()
+	content := "Host=localhost:6998\n"
+	if err := os.WriteFile(filepath.Join(dir, "eqhost.txt"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := Enable(dir, "127.0.0.1:6998")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed {
+		t.Fatal("expected localhost host line to match 127.0.0.1 listen addr")
+	}
+}
+
+func TestEnableSkipsHostLineWithoutLoginServerSection(t *testing.T) {
+	dir := t.TempDir()
+	content := "Host=127.0.0.1:6998\n"
+	if err := os.WriteFile(filepath.Join(dir, "eqhost.txt"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := Enable(dir, "127.0.0.1:6998")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed {
+		t.Fatal("expected no write when Host= already points at proxy")
+	}
+}
+
 func TestReadWriteAndEnsureBackup(t *testing.T) {
 	dir := t.TempDir()
 	cur, err := Read(dir)
