@@ -34,4 +34,13 @@ func TestEffectiveBindAddr(t *testing.T) {
 	if !changed || got != "0.0.0.0:6999" {
 		t.Fatalf("localhost alias: got %q changed=%v", got, changed)
 	}
+
+	got, changed = EffectiveBindAddr("not-a-host", upExt)
+	if changed || got != "not-a-host" {
+		t.Fatalf("invalid listen: got %q changed=%v", got, changed)
+	}
+	got, changed = EffectiveBindAddr("127.0.0.1:6998", nil)
+	if changed || got != "127.0.0.1:6998" {
+		t.Fatalf("nil upstream: got %q changed=%v", got, changed)
+	}
 }

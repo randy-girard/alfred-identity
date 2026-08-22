@@ -139,6 +139,28 @@ func TestIsUpstreamPeer(t *testing.T) {
 	}
 }
 
+func TestIsUpstreamPeerNilAddrs(t *testing.T) {
+	up := &net.UDPAddr{IP: net.IPv4(1, 2, 3, 4), Port: 5998}
+	if isUpstreamPeer(nil, up) || isUpstreamPeer(up, nil) {
+		t.Fatal("nil peer should not match")
+	}
+}
+
+func TestNormalizeAddr(t *testing.T) {
+	if normalizeAddr(nil) != nil {
+		t.Fatal("nil addr")
+	}
+	mapped := &net.UDPAddr{IP: net.ParseIP("::ffff:127.0.0.1"), Port: 6998}
+	got := normalizeAddr(mapped)
+	if got.IP.String() != "127.0.0.1" || got.Port != 6998 {
+		t.Fatalf("mapped=%v", got)
+	}
+	v6 := &net.UDPAddr{IP: net.ParseIP("2001:db8::1"), Port: 1}
+	if normalizeAddr(v6) != v6 {
+		t.Fatal("non-mapped v6 should pass through")
+	}
+}
+
 func TestExtractUsernameFromLoginPacket(t *testing.T) {
 	base := []byte{
 		0x00, 0x03,
