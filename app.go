@@ -1209,6 +1209,98 @@ func (a *App) SetEQDirectory(path string) error {
 	return nil
 }
 
+// EqHostState describes eqhost.txt and its backup for the EverQuest tab.
+type EqHostState struct {
+	Current   string `json:"current"`
+	Backup    string `json:"backup"`
+	HasBackup bool   `json:"has_backup"`
+}
+
+func (a *App) eqInstallDir() (string, error) {
+	if a.cfg == nil {
+		return "", nil
+	}
+	dir := strings.TrimSpace(a.cfg.Get().EQDirectory)
+	if dir == "" {
+		return "", fmt.Errorf("EverQuest directory not set")
+	}
+	if err := eqpath.ValidateInstall(dir); err != nil {
+		return "", err
+	}
+	return dir, nil
+}
+
+// GetEqHostState returns eqhost.txt and backup contents for the configured install.
+func (a *App) GetEqHostState() (EqHostState, error) {
+	dir, err := a.eqInstallDir()
+	if err != nil {
+		if strings.Contains(err.Error(), "not set") {
+			return EqHostState{}, nil
+		}
+		return EqHostState{}, err
+	}
+	cur, err := eqhost.Read(dir)
+	if err != nil {
+		return EqHostState{}, err
+	}
+	bak, err := eqhost.ReadBackup(dir)
+	if err != nil {
+		return EqHostState{}, err
+	}
+	return EqHostState{
+		Current:   cur,
+		Backup:    bak,
+		HasBackup: eqhost.HasBackup(dir),
+	}, nil
+}
+
+// SaveEqHostContent writes eqhost.txt after creating a one-time backup when needed.
+func (a *App) SaveEqHostContent(content string) error {
+	dir, err := a.eqInstallDir()
+	if err != nil {
+		return err
+	}
+	if err := eqhost.Write(dir, content); err != nil {
+		return err
+	}
+	if a.ctx != nil {
+		_, _ = runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
+			Type:    runtime.InfoDialog,
+			Title:   "eqhost.txt saved",
+			Message: "Restart EverQuest for eqhost.txt changes to apply.",
+		})
+	}
+	return nil
+}
+
+// RestoreEqHostBackup restores eqhost.txt from eqhost.txt.bak.
+func (a *App) RestoreEqHostBackup() error {
+	dir, err := a.eqInstallDir()
+	if err != nil {
+		return err
+	}
+	if err := eqhost.RestoreBackup(dir); err != nil {
+		return err
+	}
+	if a.ctx != nil {
+		_, _ = runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
+			Type:    runtime.InfoDialog,
+			Title:   "eqhost.txt restored",
+			Message: "Restart EverQuest for the restored eqhost.txt to apply.",
+		})
+	}
+	return nil
+}
+
+// OpenEQDirectory opens the configured EverQuest install folder in the file manager.
+func (a *App) OpenEQDirectory() error {
+	dir, err := a.eqInstallDir()
+	if err != nil {
+		return err
+	}
+	return eqpath.OpenInFileManager(dir)
+}
+
 // PickEQDirectory opens a native folder picker and saves the selection.
 func (a *App) PickEQDirectory() (string, error) {
 	if a.ctx == nil {
