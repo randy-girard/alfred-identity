@@ -11,14 +11,14 @@ Native desktop GUI (Wails v2) — local UDP login proxy and SSO client for **alf
 ## Develop
 
 ```bash
-cd alfred-identity-app
+cd alfred-identity
 ./scripts/dev.sh
 ```
 
 ## Build
 
 ```bash
-cd alfred-identity-app
+cd alfred-identity
 ./scripts/build.sh
 # → build/bin/Alfred Identity.app (macOS) or equivalent
 ```
@@ -45,7 +45,7 @@ The app lives in the **menu bar** (macOS: **AI** status item) or **system tray**
 
 ## First-time setup (with local daemon)
 
-1. Start **alfred-identity-backend** (from `../alfred-identity-web`): `docker compose up --build`
+1. Start **alfred-identity-backend** (from `../alfred-identity-backend`): `docker compose up --build`
 2. Create an SSO token in Discord (`/alfred-identity-sso create`) or with `go run ./cmd/seedtoken …` when Discord is disabled
 3. Open **Alfred Identity** → **Connections** → paste `http://127.0.0.1:8181` (or `…/sso-source.json`) → **Add from URL**, paste your token, then set mode to **Login w/ SSO**
 4. **EverQuest**: pick the install directory (log presence + `eqhost.txt`)
@@ -93,4 +93,4 @@ Local personal accounts CSV paths are also under that config directory by defaul
 
 - [docs/ws-api.md](docs/ws-api.md) — WebSocket contract (same as daemon)
 - [docs/protocol.md](docs/protocol.md) — login packet / DES notes
-- [../alfred-identity-web/README.md](../alfred-identity-web/README.md) — alfred-identity-backend (Compose + Discord)
+- [../alfred-identity-backend/README.md](../alfred-identity-backend/README.md) — alfred-identity-backend (Compose + Discord)
