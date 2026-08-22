@@ -1,6 +1,6 @@
 //go:build darwin
 
-package main
+package app
 
 /*
 #cgo CFLAGS: -x objective-c -fobjc-arc
@@ -22,7 +22,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-func (a *App) applicationMenu() *menu.Menu {
+func (a *App) ApplicationMenu() *menu.Menu {
 	// Show / Exit live on the menu-bar status item only — not in File.
 	m := menu.NewMenu()
 	m.Append(menu.AppMenu())
@@ -55,7 +55,7 @@ func (a *App) activateForNativeDialog() {
 	C.AISetDockVisible(1)
 }
 
-func (a *App) onBeforeClose(_ context.Context) bool {
+func (a *App) OnBeforeClose(_ context.Context) bool {
 	// runtime.Quit invokes OnBeforeClose; true cancels quit. Only hide when not exiting.
 	if a.quitting.Load() {
 		return false
@@ -64,7 +64,7 @@ func (a *App) onBeforeClose(_ context.Context) bool {
 	return true // keep process running (menu bar status item)
 }
 
-func (a *App) onDomReady(_ context.Context) {
+func (a *App) OnDomReady(_ context.Context) {
 	// Ensure the status item is created after AppKit's run loop is up.
 	a.startTray()
 	a.showWindow()
@@ -78,7 +78,7 @@ func (a *App) quitApp() {
 	}
 }
 
-func (a *App) onSecondInstanceLaunch(_ options.SecondInstanceData) {
+func (a *App) OnSecondInstanceLaunch(_ options.SecondInstanceData) {
 	// Wails exits the second process silently; tell the user and focus this one.
 	showAlreadyRunningError()
 	a.showWindow()

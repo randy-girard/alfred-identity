@@ -1,6 +1,6 @@
 //go:build unix
 
-package main
+package app
 
 import (
 	"os"
@@ -26,7 +26,7 @@ func acquireInstanceLock() error {
 	return nil
 }
 
-func releaseSingleInstance() {
+func ReleaseSingleInstance() {
 	if instanceLockFile == nil {
 		return
 	}

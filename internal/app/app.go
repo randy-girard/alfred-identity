@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"context"
@@ -84,7 +84,7 @@ type App struct {
 // globalApp lets the macOS status-item C callbacks reach the running App.
 var globalApp *App
 
-func NewApp() *App {
+func New() *App {
 	buf := logbuf.New(3000)
 	a := &App{
 		logBuf: buf,
@@ -116,7 +116,7 @@ func (a *App) ClearLogs() {
 	}
 }
 
-func (a *App) startup(ctx context.Context) {
+func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
 	// Menu-bar / tray icon as early as possible (safe if DomReady calls again).
 	a.startTray()
@@ -160,7 +160,7 @@ func (a *App) startup(ctx context.Context) {
 	go a.checkUpdateOnStartup()
 }
 
-func (a *App) shutdown(ctx context.Context) {
+func (a *App) Shutdown(ctx context.Context) {
 	if a.hbCancel != nil {
 		a.hbCancel()
 	}

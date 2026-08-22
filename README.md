@@ -8,6 +8,20 @@ Native desktop GUI (Wails v2) — local UDP login proxy and SSO client for **alf
 - [Wails v2](https://wails.io) CLI (`go install github.com/wailsapp/wails/v2/cmd/wails@latest`)
 - Node.js (for the frontend)
 
+## Project layout
+
+```
+main.go              # Wails entrypoint
+wails.json
+frontend/            # React UI
+internal/
+  app/               # Wails backend, tray, instance lock, tests
+  eqhost/ …          # login proxy, protocol, SSO client, etc.
+scripts/             # dev.sh, build.sh, test.sh
+docs/
+build/               # Wails platform packaging assets
+```
+
 ## Develop
 
 ```bash
@@ -23,7 +37,7 @@ cd alfred-identity
 # → build/bin/Alfred Identity.app (macOS) or equivalent
 ```
 
-`scripts/dev.sh` and `scripts/build.sh` stamp `main.Version` at link time from git (`dev-<short>` plus `+dirty` when needed). Release CI overrides with semver (`1.2.0`) from the release tag.
+`scripts/dev.sh` and `scripts/build.sh` stamp `app.Version` at link time from git (`dev-<short>` plus `+dirty` when needed). Release CI overrides with semver (`1.2.0`) from the release tag.
 
 ## Tests and coverage
 

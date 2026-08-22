@@ -1,6 +1,6 @@
 //go:build windows
 
-package main
+package app
 
 import (
 	"fmt"
@@ -36,7 +36,7 @@ func acquireInstanceLock() error {
 	return nil
 }
 
-func releaseSingleInstance() {
+func ReleaseSingleInstance() {
 	if windowsInstanceMutex != 0 {
 		_ = syscall.CloseHandle(windowsInstanceMutex)
 		windowsInstanceMutex = 0

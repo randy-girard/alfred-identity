@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"os"
@@ -7,9 +7,9 @@ import (
 
 const instanceLockName = "instance.lock"
 
-// ensureSingleInstance acquires an exclusive process lock. If another instance
+// EnsureSingleInstance acquires an exclusive process lock. If another instance
 // holds it, shows an error dialog and returns false.
-func ensureSingleInstance() bool {
+func EnsureSingleInstance() bool {
 	if err := acquireInstanceLock(); err != nil {
 		showAlreadyRunningError()
 		return false

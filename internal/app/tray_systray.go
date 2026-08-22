@@ -1,6 +1,6 @@
 //go:build windows || linux
 
-package main
+package app
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-func (a *App) applicationMenu() *menu.Menu {
+func (a *App) ApplicationMenu() *menu.Menu {
 	// Show / Exit live on the system tray only.
 	m := menu.NewMenu()
 	m.Append(menu.EditMenu())
@@ -35,7 +35,7 @@ func (a *App) hideWindow() {
 
 func (a *App) activateForNativeDialog() {}
 
-func (a *App) onBeforeClose(_ context.Context) bool {
+func (a *App) OnBeforeClose(_ context.Context) bool {
 	if a.quitting.Load() {
 		return false
 	}
@@ -43,7 +43,7 @@ func (a *App) onBeforeClose(_ context.Context) bool {
 	return true
 }
 
-func (a *App) onDomReady(_ context.Context) {
+func (a *App) OnDomReady(_ context.Context) {
 	a.showWindow()
 }
 
@@ -55,7 +55,7 @@ func (a *App) quitApp() {
 	}
 }
 
-func (a *App) onSecondInstanceLaunch(_ options.SecondInstanceData) {
+func (a *App) OnSecondInstanceLaunch(_ options.SecondInstanceData) {
 	showAlreadyRunningError()
 	a.showWindow()
 }

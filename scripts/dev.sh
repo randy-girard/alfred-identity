@@ -6,5 +6,5 @@ if ! command -v wails >/dev/null; then
 	go install github.com/wailsapp/wails/v2/cmd/wails@latest
 fi
 LDFLAGS="$("./scripts/version-ldflags.sh")"
-echo "→ wails dev (${LDFLAGS#-X main.Version=})"
+echo "→ wails dev (${LDFLAGS#-X github.com/alfred-identity/app/internal/app.Version=})"
 exec wails dev -ldflags "$LDFLAGS" "$@"

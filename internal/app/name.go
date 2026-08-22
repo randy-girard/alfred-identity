@@ -1,4 +1,4 @@
-package main
+package app
 
 // AppName is the user-visible application title.
 const AppName = "Alfred Identity"
