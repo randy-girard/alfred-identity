@@ -54,3 +54,43 @@ func TestScanWelcome(t *testing.T) {
 		t.Fatalf("offset changed without growth")
 	}
 }
+
+func TestScanYouHaveEntered(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "eqlog_Zone_server.txt")
+	if err := os.WriteFile(path, []byte("You have entered West Freeport.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w := New(dir)
+	w.scan(map[string]int64{})
+	online := w.OnlineCharacters()
+	if len(online) != 1 || online[0] != "Zone" {
+		t.Fatalf("%#v", online)
+	}
+}
+
+func TestScanTruncateResetsOffset(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "eqlog_Hero_server.txt")
+	if err := os.WriteFile(path, []byte("Welcome to EverQuest!\nextra\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w := New(dir)
+	offsets := map[string]int64{}
+	w.scan(offsets)
+	if offsets[path] == 0 {
+		t.Fatal("expected offset")
+	}
+	if err := os.WriteFile(path, []byte("You have entered East Commonlands.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w.scan(offsets)
+	st, _ := os.Stat(path)
+	if offsets[path] != st.Size() {
+		t.Fatalf("offset=%d size=%d", offsets[path], st.Size())
+	}
+	online := w.OnlineCharacters()
+	if len(online) != 1 || online[0] != "Hero" {
+		t.Fatalf("%#v", online)
+	}
+}
