@@ -17,6 +17,7 @@ import (
 	"github.com/alfred-identity/app/internal/localdata"
 	"github.com/alfred-identity/app/internal/logbuf"
 	"github.com/alfred-identity/app/internal/logwatch"
+	"github.com/alfred-identity/app/internal/p99proxy"
 	"github.com/alfred-identity/app/internal/proxy"
 	"github.com/alfred-identity/app/internal/router"
 	"github.com/alfred-identity/app/internal/sources"
@@ -24,8 +25,6 @@ import (
 	"github.com/alfred-identity/app/internal/updatecheck"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
-
-const Version = "0.1.0"
 
 // dialogConfirmed reports whether the user chose the affirmative action.
 // Windows QuestionDialog ignores custom Buttons and returns Yes/No/Ok/Cancel.
@@ -123,14 +122,9 @@ func (a *App) startup(ctx context.Context) {
 	a.startTray()
 
 	home, _ := os.UserConfigDir()
-	dir := filepath.Join(home, "alfred-identity-gui")
-	// Migrate legacy config directory from the old product name.
-	if legacy := filepath.Join(home, "p99-identity-gui"); legacy != dir {
-		if _, err := os.Stat(dir); os.IsNotExist(err) {
-			if _, err := os.Stat(legacy); err == nil {
-				_ = os.Rename(legacy, dir)
-			}
-		}
+	dir, err := appConfigDir()
+	if err != nil {
+		dir = filepath.Join(home, ConfigDirName)
 	}
 	_ = os.MkdirAll(dir, 0o700)
 
@@ -297,19 +291,61 @@ func (a *App) checkUpdateOnStartup() {
 	if err != nil || !info.UpdateAvailable {
 		return
 	}
+	a.emitUpdateChecked(info)
+	a.presentUpdateCheck(info, true)
+}
+
+func (a *App) checkUpdateInteractive() {
 	if a.ctx == nil {
 		return
 	}
-	sel, err := runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
-		Type:          runtime.QuestionDialog,
-		Title:         "Update available",
-		Message:       "Version " + info.Latest + " is available (you have " + info.Current + ").\n\nOpen the release page?",
-		DefaultButton: "Yes",
-		CancelButton:  "No",
-	})
-	if err == nil && sel == "Yes" && info.ReleaseURL != "" {
-		runtime.BrowserOpenURL(a.ctx, info.ReleaseURL)
+	go func() {
+		info, _ := a.CheckUpdate()
+		a.emitUpdateChecked(info)
+		a.presentUpdateCheck(info, true)
+	}()
+}
+
+func (a *App) emitUpdateChecked(info UpdateInfo) {
+	if a.ctx != nil {
+		runtime.EventsEmit(a.ctx, "update-checked", info)
 	}
+}
+
+func (a *App) presentUpdateCheck(info UpdateInfo, offerOpen bool) {
+	if a.ctx == nil {
+		return
+	}
+	a.activateForNativeDialog()
+	if info.Error != "" {
+		_, _ = runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
+			Type:    runtime.ErrorDialog,
+			Title:   "Update check failed",
+			Message: info.Error,
+		})
+		return
+	}
+	if info.UpdateAvailable {
+		if !offerOpen {
+			return
+		}
+		sel, err := runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
+			Type:          runtime.QuestionDialog,
+			Title:         "Update available",
+			Message:       "Version " + info.Latest + " is available (you have " + info.Current + ").\n\nOpen the release page?",
+			DefaultButton: "Yes",
+			CancelButton:  "No",
+		})
+		if err == nil && sel == "Yes" && info.ReleaseURL != "" {
+			runtime.BrowserOpenURL(a.ctx, info.ReleaseURL)
+		}
+		return
+	}
+	_, _ = runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
+		Type:    runtime.InfoDialog,
+		Title:   "No updates",
+		Message: "You're running the latest version (" + info.Current + ").",
+	})
 }
 
 // --- Wails-bound API ---
@@ -637,34 +673,180 @@ func (a *App) UnshareLocalAccount(name string) error {
 // ImportLocalAccountsCSV opens a file picker and merges accounts from a CSV
 // (name,password[,aliases] with | -separated aliases).
 func (a *App) ImportLocalAccountsCSV() (string, error) {
-	if a.local == nil || a.ctx == nil {
+	path, err := a.PickLocalAccountsCSVFile()
+	if err != nil || path == "" {
+		return "", err
+	}
+	res, err := a.ImportLocalAccountsFromPath(path)
+	if err != nil {
+		return "", err
+	}
+	if res.Message != "" && a.ctx != nil {
+		_, _ = runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
+			Type:    runtime.InfoDialog,
+			Title:   "Import complete",
+			Message: res.Message,
+		})
+	}
+	return res.Message, nil
+}
+
+type ImportAccountsResult struct {
+	Message string `json:"message"`
+	Added   int    `json:"added"`
+	Updated int    `json:"updated"`
+}
+
+type P99ProxyInstallDTO struct {
+	ConfigPath    string `json:"config_path"`
+	ConfigDir     string `json:"config_dir"`
+	AccountsCSV   string `json:"accounts_csv"`
+	CharactersCSV string `json:"characters_csv"`
+	EQDirectory   string `json:"eq_directory,omitempty"`
+	HasAccounts   bool   `json:"has_accounts"`
+}
+
+// DiscoverP99LoginProxyInstalls searches common locations for proxyconfig.ini.
+func (a *App) DiscoverP99LoginProxyInstalls() ([]P99ProxyInstallDTO, error) {
+	return a.p99InstallsFrom(p99proxy.Discover(a.p99ExtraDirs()...)), nil
+}
+
+// ScanP99LoginProxyInstalls recursively searches user folders for proxyconfig.ini.
+func (a *App) ScanP99LoginProxyInstalls() ([]P99ProxyInstallDTO, error) {
+	return a.p99InstallsFrom(p99proxy.DiscoverRecursive(a.p99ExtraDirs()...)), nil
+}
+
+func (a *App) p99ExtraDirs() []string {
+	var extra []string
+	if a.cfg != nil {
+		if eq := strings.TrimSpace(a.cfg.Get().EQDirectory); eq != "" {
+			extra = append(extra, eq)
+		}
+	}
+	return extra
+}
+
+func (a *App) p99InstallsFrom(found []p99proxy.Install) []P99ProxyInstallDTO {
+	out := make([]P99ProxyInstallDTO, 0, len(found))
+	for _, inst := range found {
+		out = append(out, P99ProxyInstallDTO{
+			ConfigPath:    inst.ConfigPath,
+			ConfigDir:     inst.ConfigDir,
+			AccountsCSV:   inst.AccountsCSV,
+			CharactersCSV: inst.CharactersCSV,
+			EQDirectory:   inst.EQDirectory,
+			HasAccounts:   inst.HasAccounts,
+		})
+	}
+	return out
+}
+
+// PickLocalAccountsCSVFile opens a native file picker for a local accounts CSV.
+func (a *App) PickLocalAccountsCSVFile() (string, error) {
+	if a.ctx == nil {
 		return "", fmt.Errorf("not ready")
 	}
-	path, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
-		Title: "Import local accounts CSV",
+	return runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Select local accounts CSV",
 		Filters: []runtime.FileFilter{
 			{DisplayName: "CSV (*.csv)", Pattern: "*.csv"},
 			{DisplayName: "All files", Pattern: "*"},
 		},
 	})
-	if err != nil {
-		return "", err
+}
+
+// PickP99ProxyConfigFile opens a file picker starting in startDir for proxyconfig.ini or CSV.
+func (a *App) PickP99ProxyConfigFile(startDir string) (string, error) {
+	if a.ctx == nil {
+		return "", fmt.Errorf("not ready")
 	}
+	opts := runtime.OpenDialogOptions{
+		Title: "Select P99 Login Proxy config or accounts CSV",
+		Filters: []runtime.FileFilter{
+			{DisplayName: "INI config (*.ini)", Pattern: "*.ini"},
+			{DisplayName: "CSV (*.csv)", Pattern: "*.csv"},
+			{DisplayName: "All files", Pattern: "*"},
+		},
+	}
+	if dir := resolveDialogDirectory(startDir); dir != "" {
+		opts.DefaultDirectory = dir
+	}
+	return runtime.OpenFileDialog(a.ctx, opts)
+}
+
+// PickP99ProxyDataDirectory opens a folder picker for a P99 Login Proxy install directory.
+func (a *App) PickP99ProxyDataDirectory(startDir string) (string, error) {
+	if a.ctx == nil {
+		return "", fmt.Errorf("not ready")
+	}
+	opts := runtime.OpenDialogOptions{
+		Title:                "Select P99 Login Proxy folder",
+		CanCreateDirectories: false,
+	}
+	if dir := resolveDialogDirectory(startDir); dir != "" {
+		opts.DefaultDirectory = dir
+	}
+	return runtime.OpenDirectoryDialog(a.ctx, opts)
+}
+
+func resolveDialogDirectory(startDir string) string {
+	startDir = strings.TrimSpace(startDir)
+	if startDir != "" {
+		if st, err := os.Stat(startDir); err == nil && st.IsDir() {
+			return startDir
+		}
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	for _, rel := range []string{"Documents", "Downloads", "Desktop"} {
+		dir := filepath.Join(home, rel)
+		if st, err := os.Stat(dir); err == nil && st.IsDir() {
+			return dir
+		}
+	}
+	return home
+}
+
+// OpenFolderInFileManager opens a directory in the platform file manager.
+func (a *App) OpenFolderInFileManager(path string) error {
+	return eqpath.OpenInFileManager(path)
+}
+
+// ImportLocalAccountsFromPath merges accounts from a CSV file or proxyconfig.ini.
+func (a *App) ImportLocalAccountsFromPath(path string) (ImportAccountsResult, error) {
+	if a.local == nil {
+		return ImportAccountsResult{}, fmt.Errorf("not ready")
+	}
+	path = strings.TrimSpace(path)
 	if path == "" {
-		return "", nil
+		return ImportAccountsResult{}, nil
+	}
+	if st, err := os.Stat(path); err == nil && st.IsDir() {
+		path = filepath.Join(path, p99proxy.ConfigFileName)
+	}
+	importPath := path
+	if strings.EqualFold(filepath.Base(path), p99proxy.ConfigFileName) {
+		inst, err := p99proxy.ParseConfig(path)
+		if err != nil {
+			return ImportAccountsResult{}, err
+		}
+		if !inst.HasAccounts {
+			return ImportAccountsResult{}, fmt.Errorf("accounts file not found: %s", inst.AccountsCSV)
+		}
+		importPath = inst.AccountsCSV
 	}
 	_ = a.local.Load()
-	added, updated, err := a.local.ImportAccountsCSV(path)
+	added, updated, err := a.local.ImportAccountsCSV(importPath)
 	if err != nil {
-		return "", err
+		return ImportAccountsResult{}, err
 	}
-	msg := fmt.Sprintf("Imported %d new, updated %d existing.", added, updated)
-	_, _ = runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
-		Type:    runtime.InfoDialog,
-		Title:   "Import complete",
-		Message: msg,
-	})
-	return msg, nil
+	return ImportAccountsResult{
+		Message: fmt.Sprintf("Imported %d new, updated %d existing.", added, updated),
+		Added:   added,
+		Updated: updated,
+	}, nil
 }
 
 // ExportLocalAccountsCSV opens a save dialog and writes accounts in import-compatible CSV
@@ -1459,6 +1641,9 @@ type UpdateInfo struct {
 }
 
 func (a *App) CheckUpdate() (UpdateInfo, error) {
+	if isDevVersion(Version) {
+		return UpdateInfo{Current: Version}, nil
+	}
 	repo := "alfred-identity/app"
 	if a.cfg != nil && a.cfg.Get().GitHubRepo != "" {
 		repo = a.cfg.Get().GitHubRepo

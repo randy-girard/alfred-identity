@@ -31,6 +31,8 @@ func (a *App) hideWindow() {
 	runtime.WindowHide(a.ctx)
 }
 
+func (a *App) activateForNativeDialog() {}
+
 func (a *App) onBeforeClose(_ context.Context) bool {
 	if a.quitting.Load() {
 		return false

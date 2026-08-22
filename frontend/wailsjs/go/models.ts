@@ -39,6 +39,22 @@ export namespace main {
 	        this.has_backup = source["has_backup"];
 	    }
 	}
+	export class ImportAccountsResult {
+	    message: string;
+	    added: number;
+	    updated: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ImportAccountsResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.message = source["message"];
+	        this.added = source["added"];
+	        this.updated = source["updated"];
+	    }
+	}
 	export class LocalAccountDTO {
 	    name: string;
 	    password: string;
@@ -87,6 +103,28 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.account = source["account"];
 	        this.name = source["name"];
+	    }
+	}
+	export class P99ProxyInstallDTO {
+	    config_path: string;
+	    config_dir: string;
+	    accounts_csv: string;
+	    characters_csv: string;
+	    eq_directory?: string;
+	    has_accounts: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new P99ProxyInstallDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.config_path = source["config_path"];
+	        this.config_dir = source["config_dir"];
+	        this.accounts_csv = source["accounts_csv"];
+	        this.characters_csv = source["characters_csv"];
+	        this.eq_directory = source["eq_directory"];
+	        this.has_accounts = source["has_accounts"];
 	    }
 	}
 	export class SourceDTO {

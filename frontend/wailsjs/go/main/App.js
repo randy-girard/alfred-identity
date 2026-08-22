@@ -22,6 +22,10 @@ export function DeleteSource(arg1) {
   return window['go']['main']['App']['DeleteSource'](arg1);
 }
 
+export function DiscoverP99LoginProxyInstalls() {
+  return window['go']['main']['App']['DiscoverP99LoginProxyInstalls']();
+}
+
 export function ExportLocalAccountsCSV() {
   return window['go']['main']['App']['ExportLocalAccountsCSV']();
 }
@@ -58,8 +62,16 @@ export function ImportLocalAccountsCSV() {
   return window['go']['main']['App']['ImportLocalAccountsCSV']();
 }
 
+export function ImportLocalAccountsFromPath(arg1) {
+  return window['go']['main']['App']['ImportLocalAccountsFromPath'](arg1);
+}
+
 export function OpenEQDirectory() {
   return window['go']['main']['App']['OpenEQDirectory']();
+}
+
+export function OpenFolderInFileManager(arg1) {
+  return window['go']['main']['App']['OpenFolderInFileManager'](arg1);
 }
 
 export function OpenReleaseURL(arg1) {
@@ -68,6 +80,18 @@ export function OpenReleaseURL(arg1) {
 
 export function PickEQDirectory() {
   return window['go']['main']['App']['PickEQDirectory']();
+}
+
+export function PickLocalAccountsCSVFile() {
+  return window['go']['main']['App']['PickLocalAccountsCSVFile']();
+}
+
+export function PickP99ProxyConfigFile(arg1) {
+  return window['go']['main']['App']['PickP99ProxyConfigFile'](arg1);
+}
+
+export function PickP99ProxyDataDirectory(arg1) {
+  return window['go']['main']['App']['PickP99ProxyDataDirectory'](arg1);
 }
 
 export function PreviewSourceJSON(arg1) {
@@ -136,6 +160,10 @@ export function SaveLocalCharacter(arg1, arg2) {
 
 export function SaveSource(arg1) {
   return window['go']['main']['App']['SaveSource'](arg1);
+}
+
+export function ScanP99LoginProxyInstalls() {
+  return window['go']['main']['App']['ScanP99LoginProxyInstalls']();
 }
 
 export function SetActiveSource(arg1) {

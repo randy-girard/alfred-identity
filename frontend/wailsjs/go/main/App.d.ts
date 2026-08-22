@@ -14,6 +14,8 @@ export function DeleteLocalCharacter(arg1:string):Promise<void>;
 
 export function DeleteSource(arg1:string):Promise<void>;
 
+export function DiscoverP99LoginProxyInstalls():Promise<Array<main.P99ProxyInstallDTO>>;
+
 export function ExportLocalAccountsCSV():Promise<string>;
 
 export function GetEqHostState():Promise<main.EqHostState>;
@@ -32,11 +34,21 @@ export function GetVersion():Promise<string>;
 
 export function ImportLocalAccountsCSV():Promise<string>;
 
+export function ImportLocalAccountsFromPath(arg1:string):Promise<main.ImportAccountsResult>;
+
 export function OpenEQDirectory():Promise<void>;
+
+export function OpenFolderInFileManager(arg1:string):Promise<void>;
 
 export function OpenReleaseURL(arg1:string):Promise<void>;
 
 export function PickEQDirectory():Promise<string>;
+
+export function PickLocalAccountsCSVFile():Promise<string>;
+
+export function PickP99ProxyConfigFile(arg1:string):Promise<string>;
+
+export function PickP99ProxyDataDirectory(arg1:string):Promise<string>;
 
 export function PreviewSourceJSON(arg1:string):Promise<Array<main.SourceImportPreview>>;
 
@@ -71,6 +83,8 @@ export function SaveLocalAccount(arg1:string,arg2:string,arg3:Array<string>):Pro
 export function SaveLocalCharacter(arg1:string,arg2:string):Promise<void>;
 
 export function SaveSource(arg1:sources.Source):Promise<main.SourceDTO>;
+
+export function ScanP99LoginProxyInstalls():Promise<Array<main.P99ProxyInstallDTO>>;
 
 export function SetActiveSource(arg1:string):Promise<void>;
 

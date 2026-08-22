@@ -347,6 +347,10 @@ tr.row-in-use-other td {
   font-size: 0.9em;
 }
 
+.update-status.err {
+  color: var(--danger, #c0392b);
+}
+
 .banner {
   background: var(--banner-info-bg);
   border: 1px solid var(--banner-info-border);
@@ -1119,6 +1123,63 @@ button.secondary.danger:hover:not(:disabled) {
   margin-bottom: 0.75rem;
 }
 .source-empty-modal p { margin: 0; color: var(--muted); line-height: 1.45; }
+
+.import-section {
+  margin: 1rem 0 1.25rem;
+  padding-top: 0.25rem;
+  border-top: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+}
+
+.import-section:first-of-type {
+  border-top: none;
+  margin-top: 0.5rem;
+}
+
+.import-section h3.sub {
+  margin-bottom: 0.35rem;
+}
+
+.p99-install-list {
+  list-style: none;
+  margin: 0 0 0.75rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.p99-install-item {
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.1));
+  border-radius: 6px;
+  padding: 0.55rem 0.65rem;
+  background: var(--panel-soft, rgba(0, 0, 0, 0.02));
+}
+
+.p99-install-path {
+  font-size: 0.82rem;
+  word-break: break-all;
+  margin-bottom: 0.25rem;
+}
+
+.p99-install-eq {
+  margin-bottom: 0.35rem !important;
+}
+
+.p99-install-actions {
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.p99-browse-actions {
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-top: 0.35rem;
+}
+
+.import-result {
+  color: var(--ok-soft-fg, #2a7a3a);
+  font-weight: 500;
+}
 
 .logs-panel .logs-scroll {
   display: flex;

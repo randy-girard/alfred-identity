@@ -33,6 +33,8 @@ func (a *App) hideWindow() {
 	runtime.WindowHide(a.ctx)
 }
 
+func (a *App) activateForNativeDialog() {}
+
 func (a *App) onBeforeClose(_ context.Context) bool {
 	if a.quitting.Load() {
 		return false
@@ -66,16 +68,19 @@ func (a *App) onTrayReady() {
 	if len(trayIcon) > 0 {
 		systray.SetIcon(trayIcon)
 	}
-	systray.SetTitle("Alfred Identity")
-	systray.SetTooltip("Alfred Identity")
-	mShow := systray.AddMenuItem("Show Window", "Show Alfred Identity")
+	systray.SetTitle(AppName)
+	systray.SetTooltip(AppName)
+	mShow := systray.AddMenuItem("Show Window", "Show "+AppName)
+	mUpdates := systray.AddMenuItem("Check for Updates", "Check for a new release")
 	systray.AddSeparator()
-	mQuit := systray.AddMenuItem("Exit", "Quit Alfred Identity")
+	mQuit := systray.AddMenuItem("Exit", "Quit "+AppName)
 	go func() {
 		for {
 			select {
 			case <-mShow.ClickedCh:
 				a.showWindow()
+			case <-mUpdates.ClickedCh:
+				a.checkUpdateInteractive()
 			case <-mQuit.ClickedCh:
 				a.quitApp()
 				return

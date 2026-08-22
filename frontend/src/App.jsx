@@ -1,6 +1,7 @@
 import {useCallback, useEffect, useLayoutEffect, useRef, useState} from 'react'
 import {createPortal} from 'react-dom'
 import './App.css'
+import {EventsOn} from '../wailsjs/runtime/runtime'
 import {
   ClearLogs,
   CheckUpdate,
@@ -8,10 +9,17 @@ import {
   GetLocalAccounts,
   GetLogs,
   GetStatus,
-  ImportLocalAccountsCSV,
+  GetVersion,
+  DiscoverP99LoginProxyInstalls,
+  ScanP99LoginProxyInstalls,
+  ImportLocalAccountsFromPath,
   ExportLocalAccountsCSV,
+  OpenFolderInFileManager,
   OpenReleaseURL,
   PickEQDirectory,
+  PickLocalAccountsCSVFile,
+  PickP99ProxyConfigFile,
+  PickP99ProxyDataDirectory,
   SaveLocalAccount,
   SaveSource,
   PreviewSourceJSON,
@@ -369,6 +377,11 @@ export default function App() {
   const [localAccounts, setLocalAccounts] = useState([])
   const [localForm, setLocalForm] = useState(blankLocalForm)
   const [accountModal, setAccountModal] = useState(false)
+  const [importModal, setImportModal] = useState(false)
+  const [p99Installs, setP99Installs] = useState([])
+  const [p99InstallsLoading, setP99InstallsLoading] = useState(false)
+  const [p99ScanDeep, setP99ScanDeep] = useState(false)
+  const [importResult, setImportResult] = useState(null)
   const [showLocalPassword, setShowLocalPassword] = useState(false)
   const [shareModal, setShareModal] = useState(false)
   const [shareForm, setShareForm] = useState({name: '', userIds: [], shared: false})
@@ -383,10 +396,40 @@ export default function App() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [update, setUpdate] = useState(null)
+  const [updateStatus, setUpdateStatus] = useState(null)
+  const [updateChecking, setUpdateChecking] = useState(false)
   const [theme, setTheme] = useState(() => readStoredTheme())
   const [logs, setLogs] = useState([])
   const logEndRef = useRef(null)
   const [logAutoScroll, setLogAutoScroll] = useState(true)
+
+  const applyUpdateInfo = useCallback((u) => {
+    if (!u) return
+    setUpdateStatus(u)
+    if (u.update_available) setUpdate(u)
+  }, [])
+
+  const checkForUpdates = useCallback(async () => {
+    setUpdateChecking(true)
+    try {
+      const u = await CheckUpdate()
+      applyUpdateInfo(u)
+      setError('')
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setUpdateChecking(false)
+    }
+  }, [applyUpdateInfo])
+
+  useEffect(() => {
+    GetVersion()
+      .then((v) => {
+        setUpdateStatus((prev) => prev ?? {current: v, update_available: false})
+      })
+      .catch(() => {})
+    return EventsOn('update-checked', applyUpdateInfo)
+  }, [applyUpdateInfo])
 
   useEffect(() => {
     applyTheme(theme)
@@ -421,11 +464,9 @@ export default function App() {
       // Keep share "in use" / last-login indicators fresh while SSO is up.
       refreshLocal()
     }, 4000)
-    CheckUpdate().then((u) => {
-      if (u?.update_available) setUpdate(u)
-    }).catch(() => {})
+    CheckUpdate().then(applyUpdateInfo).catch(() => {})
     return () => clearInterval(id)
-  }, [refresh, refreshLocal])
+  }, [refresh, refreshLocal, applyUpdateInfo])
 
   useEffect(() => {
     if (tab !== 'eq') return
@@ -497,6 +538,84 @@ export default function App() {
     setAccountModal(false)
     setShowLocalPassword(false)
     setLocalForm(blankLocalForm())
+  }
+
+  async function openImportModal() {
+    setImportResult(null)
+    setImportModal(true)
+    setP99ScanDeep(false)
+    setP99InstallsLoading(true)
+    try {
+      const installs = await DiscoverP99LoginProxyInstalls()
+      setP99Installs(installs || [])
+    } catch {
+      setP99Installs([])
+    } finally {
+      setP99InstallsLoading(false)
+    }
+  }
+
+  async function scanP99Installs() {
+    setP99ScanDeep(true)
+    setP99InstallsLoading(true)
+    setImportResult(null)
+    try {
+      const installs = await ScanP99LoginProxyInstalls()
+      setP99Installs(installs || [])
+    } catch (e) {
+      setError(String(e))
+      setP99Installs([])
+    } finally {
+      setP99InstallsLoading(false)
+      setP99ScanDeep(false)
+    }
+  }
+
+  function closeImportModal() {
+    setImportModal(false)
+    setImportResult(null)
+  }
+
+  async function importAccountsFromPath(path) {
+    const res = await ImportLocalAccountsFromPath(path)
+    setImportResult(res)
+    await refreshLocal()
+    return res
+  }
+
+  async function withNativeDialog(fn) {
+    setBusy(true)
+    try {
+      await fn()
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function pickCSVFile() {
+    await withNativeDialog(async () => {
+      const path = await PickLocalAccountsCSVFile()
+      if (!path) return
+      await importAccountsFromPath(path)
+    })
+  }
+
+  async function pickP99ConfigFile(startDir = '') {
+    await withNativeDialog(async () => {
+      const path = await PickP99ProxyConfigFile(startDir)
+      if (!path) return
+      await importAccountsFromPath(path)
+    })
+  }
+
+  async function pickP99InstallFolder(startDir = '') {
+    await withNativeDialog(async () => {
+      const dir = await PickP99ProxyDataDirectory(startDir)
+      if (!dir) return
+      await importAccountsFromPath(dir)
+    })
   }
 
   function openShareModal(acc) {
@@ -969,7 +1088,7 @@ export default function App() {
                           {
                             id: 'import-csv',
                             label: 'Import CSV…',
-                            onClick: () => run(() => ImportLocalAccountsCSV()),
+                            onClick: () => openImportModal(),
                           },
                           {
                             id: 'export-csv',
@@ -1501,6 +1620,43 @@ export default function App() {
                 </button>
               </div>
               <p className="hint">Default 6998. Changing the port while the proxy is on will restart it.</p>
+
+              <h2 className="sub">Updates</h2>
+              <p className="hint">
+                Current version:{' '}
+                <strong>{status?.version || updateStatus?.current || '—'}</strong>
+              </p>
+              <div className="row">
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy || updateChecking}
+                  onClick={() => run(checkForUpdates)}
+                >
+                  {updateChecking ? 'Checking…' : 'Check for updates'}
+                </button>
+              </div>
+              {updateStatus && !updateChecking && (
+                <p className={`hint update-status${updateStatus.error ? ' err' : ''}`}>
+                  {updateStatus.error ? (
+                    <>Could not check for updates: {updateStatus.error}</>
+                  ) : updateStatus.update_available ? (
+                    <>
+                      Update available: <strong>{updateStatus.latest}</strong> (you have{' '}
+                      {updateStatus.current}).{' '}
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => OpenReleaseURL(updateStatus.release_url)}
+                      >
+                        Open release
+                      </button>
+                    </>
+                  ) : (
+                    <>You&apos;re on the latest version ({updateStatus.current}).</>
+                  )}
+                </p>
+              )}
             </div>
           </section>
         )}
@@ -1556,6 +1712,128 @@ export default function App() {
           </div>
         </div>
       </footer>
+
+      {importModal && (
+        <div className="modal-backdrop" onClick={closeImportModal} role="presentation">
+          <div
+            className="modal modal-wide"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="import-modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="import-modal-title">Import local accounts</h2>
+            <p className="hint">
+              Import name/password rows from a CSV file or from an existing P99 Login Proxy install.
+            </p>
+
+            <div className="import-section">
+              <h3 className="sub flush">CSV file</h3>
+              <p className="hint">Choose any <code>local_accounts.csv</code> or compatible export.</p>
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy}
+                onClick={pickCSVFile}
+              >
+                Choose CSV file…
+              </button>
+            </div>
+
+            <div className="import-section">
+              <div className="row status-head">
+                <h3 className="sub flush">P99 Login Proxy</h3>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy || p99InstallsLoading}
+                  onClick={scanP99Installs}
+                >
+                  {p99InstallsLoading && p99ScanDeep ? 'Scanning…' : 'Scan all folders'}
+                </button>
+              </div>
+              <p className="hint">
+                If you already use P99 Login Proxy, open its data folder and select{' '}
+                <code>proxyconfig.ini</code> or <code>local_accounts.csv</code>.
+                Use <strong>Scan all folders</strong> to search your home directory recursively.
+              </p>
+              {p99InstallsLoading ? (
+                <p className="hint">{p99ScanDeep ? 'Scanning all folders…' : 'Searching for installs…'}</p>
+              ) : p99Installs.length === 0 ? (
+                <p className="hint">No P99 Login Proxy installs found. Try Scan all folders.</p>
+              ) : (
+                <ul className="p99-install-list">
+                  {p99Installs.map((inst) => (
+                    <li key={inst.config_path} className="p99-install-item">
+                      <div className="mono p99-install-path" title={inst.config_path}>
+                        {inst.config_dir}
+                      </div>
+                      {inst.eq_directory ? (
+                        <div className="hint p99-install-eq">EQ: {inst.eq_directory}</div>
+                      ) : null}
+                      <div className="row p99-install-actions">
+                        <button
+                          type="button"
+                          className="secondary"
+                          disabled={busy}
+                          onClick={() => withNativeDialog(() => OpenFolderInFileManager(inst.config_dir))}
+                        >
+                          Open folder
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary"
+                          disabled={busy || !inst.has_accounts}
+                          title={inst.has_accounts ? inst.accounts_csv : 'Accounts CSV not found'}
+                          onClick={() => withNativeDialog(() => importAccountsFromPath(inst.config_path))}
+                        >
+                          Import from config
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary"
+                          disabled={busy}
+                          onClick={() => pickP99ConfigFile(inst.config_dir)}
+                        >
+                          Choose file…
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="row p99-browse-actions">
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() => pickP99InstallFolder('')}
+                >
+                  Browse for install folder…
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() => pickP99ConfigFile('')}
+                >
+                  Choose config or CSV…
+                </button>
+              </div>
+            </div>
+
+            {importResult?.message ? (
+              <p className="hint import-result">{importResult.message}</p>
+            ) : null}
+
+            <div className="modal-actions">
+              <button type="button" className="secondary" disabled={busy} onClick={closeImportModal}>
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {accountModal && (
         <div className="modal-backdrop" onClick={closeLocalModal} role="presentation">

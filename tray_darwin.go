@@ -49,6 +49,12 @@ func (a *App) hideWindow() {
 	C.AISetDockVisible(0)
 }
 
+// activateForNativeDialog makes the app a regular foreground process so Wails native dialogs work
+// when only the menu-bar status item is visible.
+func (a *App) activateForNativeDialog() {
+	C.AISetDockVisible(1)
+}
+
 func (a *App) onBeforeClose(_ context.Context) bool {
 	// runtime.Quit invokes OnBeforeClose; true cancels quit. Only hide when not exiting.
 	if a.quitting.Load() {
@@ -92,8 +98,15 @@ func aiGoQuit() {
 	}
 }
 
+//export aiGoCheckUpdates
+func aiGoCheckUpdates() {
+	if globalApp != nil {
+		globalApp.checkUpdateInteractive()
+	}
+}
+
 func (a *App) startTray() {
-	tip := C.CString("Alfred Identity")
+	tip := C.CString(AppName)
 	defer C.free(unsafe.Pointer(tip))
 	var pngPtr *C.uchar
 	pngLen := C.int(0)

@@ -1,10 +1,13 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/alfred-identity/app/internal/localdata"
 	"github.com/alfred-identity/app/internal/logwatch"
+	"github.com/alfred-identity/app/internal/p99proxy"
 )
 
 func TestGetVersion(t *testing.T) {
@@ -94,5 +97,31 @@ func TestSaveLocalAccountNotReady(t *testing.T) {
 	a := &App{}
 	if err := a.SaveLocalAccount("x", "y", nil); err == nil {
 		t.Fatal("expected not ready")
+	}
+}
+
+func TestImportLocalAccountsFromProxyConfig(t *testing.T) {
+	a, dir := testAppWithConfig(t)
+	proxyDir := filepath.Join(dir, "P99 Login Proxy")
+	if err := os.MkdirAll(proxyDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(proxyDir, p99proxy.ConfigFileName)
+	if err := os.WriteFile(cfg, []byte("[DEFAULT]\nlocal_accounts_file = accounts.csv\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(proxyDir, "accounts.csv"), []byte("imported,pass\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	res, err := a.ImportLocalAccountsFromPath(cfg)
+	if err != nil || res.Added != 1 {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	res, err = a.ImportLocalAccountsFromPath(proxyDir)
+	if err != nil || res.Updated != 1 {
+		t.Fatalf("dir import res=%+v err=%v", res, err)
+	}
+	if len(a.GetLocalAccounts()) != 1 || a.GetLocalAccounts()[0].Name != "imported" {
+		t.Fatalf("%+v", a.GetLocalAccounts())
 	}
 }

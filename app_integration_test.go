@@ -18,7 +18,22 @@ import (
 	"github.com/coder/websocket"
 )
 
+func TestCheckUpdateSkipsDevVersion(t *testing.T) {
+	a, _ := testAppWithConfig(t)
+	if !isDevVersion(Version) {
+		t.Skip("Version is not a dev build")
+	}
+	info, err := a.CheckUpdate()
+	if err != nil || info.UpdateAvailable || info.Error != "" || info.Current != Version {
+		t.Fatalf("info=%+v err=%v", info, err)
+	}
+}
+
 func TestCheckUpdateInvalidRepo(t *testing.T) {
+	old := Version
+	Version = "1.0.0"
+	t.Cleanup(func() { Version = old })
+
 	a, _ := testAppWithConfig(t)
 	if err := a.cfg.Update(func(c *sources.Config) { c.GitHubRepo = "bad" }); err != nil {
 		t.Fatal(err)
@@ -30,6 +45,10 @@ func TestCheckUpdateInvalidRepo(t *testing.T) {
 }
 
 func TestCheckUpdateWithMockGitHub(t *testing.T) {
+	old := Version
+	Version = "1.0.0"
+	t.Cleanup(func() { Version = old })
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"tag_name":"v9.9.9","html_url":"https://example.com/r"}`))

@@ -3,12 +3,19 @@
 
 extern void aiGoShow(void);
 extern void aiGoQuit(void);
+extern void aiGoCheckUpdates(void);
 
 @interface AIStatusTarget : NSObject
 @end
 
 @implementation AIStatusTarget
 - (void)onShow:(id)sender { aiGoShow(); }
+- (void)onCheckUpdates:(id)sender {
+	// Defer until after NSMenu tracking finishes; Wails dialogs crash if shown during menu handling.
+	dispatch_async(dispatch_get_main_queue(), ^{
+		aiGoCheckUpdates();
+	});
+}
 - (void)onExit:(id)sender { aiGoQuit(); }
 - (void)handleReopenEvent:(NSAppleEventDescriptor *)event withReplyEvent:(NSAppleEventDescriptor *)reply {
 	aiGoShow();
@@ -74,6 +81,10 @@ static void AIStatusItemCreate(NSString *tooltip, NSData *pngData) {
 		action:@selector(onShow:) keyEquivalent:@""];
 	show.target = gTarget;
 	[menu addItem:show];
+	NSMenuItem *updates = [[NSMenuItem alloc] initWithTitle:@"Check for Updates…"
+		action:@selector(onCheckUpdates:) keyEquivalent:@""];
+	updates.target = gTarget;
+	[menu addItem:updates];
 	[menu addItem:[NSMenuItem separatorItem]];
 	NSMenuItem *exitItem = [[NSMenuItem alloc] initWithTitle:@"Exit"
 		action:@selector(onExit:) keyEquivalent:@""];
