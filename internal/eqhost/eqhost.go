@@ -74,10 +74,46 @@ func Write(eqDir, content string) error {
 	return os.WriteFile(currentPath(eqDir), []byte(content), 0o644)
 }
 
-// Enable writes Host=listen into eqhost.txt after backing up to .bak.
-func Enable(eqDir, hostPort string) error {
-	content := fmt.Sprintf("%s\nHost=%s\n", section, hostPort)
-	return Write(eqDir, content)
+// Enable writes Host=listen into eqhost.txt after backing up to .bak when needed.
+// It returns changed=false when eqhost.txt already points at hostPort.
+func Enable(eqDir, hostPort string) (changed bool, err error) {
+	hostPort = strings.TrimSpace(hostPort)
+	if hostPort == "" {
+		return false, fmt.Errorf("listen address required")
+	}
+	want := fmt.Sprintf("%s\nHost=%s\n", section, hostPort)
+	cur, err := Read(eqDir)
+	if err != nil {
+		return false, err
+	}
+	if eqhostMatchesHost(cur, hostPort) {
+		return false, nil
+	}
+	if err := Write(eqDir, want); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func eqhostMatchesHost(content, hostPort string) bool {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return false
+	}
+	if !strings.Contains(content, section) {
+		return false
+	}
+	return strings.EqualFold(parseHostLine(content), hostPort)
+}
+
+func parseHostLine(content string) string {
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if len(line) >= 5 && strings.EqualFold(line[:5], "host=") {
+			return strings.TrimSpace(line[5:])
+		}
+	}
+	return ""
 }
 
 // RestoreBackup restores eqhost.txt from .bak when present.

@@ -1413,9 +1413,10 @@ func (a *App) startProxy(showEqhostDialog bool) error {
 		return err
 	}
 	if cfg.EQDirectory != "" {
-		if err := eqhost.Enable(cfg.EQDirectory, cfg.ListenAddr); err != nil {
+		changed, err := eqhost.Enable(cfg.EQDirectory, cfg.ListenAddr)
+		if err != nil {
 			a.log.Warn("eqhost", "err", err)
-		} else {
+		} else if changed {
 			a.log.Info("eqhost updated; restart EQ for changes")
 			if showEqhostDialog && a.ctx != nil {
 				_, _ = runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
