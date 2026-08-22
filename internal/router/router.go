@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"github.com/google/uuid"
 	"github.com/alfred-identity/app/internal/localdata"
@@ -35,7 +34,7 @@ type SSOAuth interface {
 	LoginAuthWithRetry(ctx context.Context, requestID, username string) (sso.LoginAuthResult, error)
 }
 
-// Router implements local → SSO → passthrough per plan.
+// Router implements SSO (on-the-fly) → local CSV → passthrough per plan.
 type Router struct {
 	Local  *localdata.Store
 	SSO    SSOAuth
@@ -50,6 +49,12 @@ func (r *Router) HandleLoginPacket(ctx context.Context, pkt []byte, typedUser st
 	}
 
 	local := r.Local.ResolveLogin(typedUser, busy)
+
+	// SSO names always fetch ephemeral DES credentials from the daemon; never use local CSV passwords.
+	if r.SSO != nil && r.SSO.Connected() && r.SSO.NameInMetadata(typedUser) {
+		return r.loginViaSSO(ctx, pkt, typedUser, local)
+	}
+
 	if local.Matched && local.Chosen != nil {
 		out, err := protocol.RewriteLoginPacket(pkt, local.Chosen.Name, local.Chosen.Password)
 		if err != nil {
@@ -60,35 +65,45 @@ func (r *Router) HandleLoginPacket(ctx context.Context, pkt []byte, typedUser st
 	if local.Matched && local.AllBusy && !local.ViaAlias {
 		return Result{Decision: DecisionFail, Message: "local account busy"}
 	}
-	// alias all busy → fall through to SSO
-
-	if r.SSO != nil && r.SSO.Connected() && r.SSO.NameInMetadata(typedUser) {
-		res, err := r.SSO.LoginAuthWithRetry(ctx, uuid.NewString(), typedUser)
-		if err != nil {
-			return Result{Decision: DecisionFail, Message: fmt.Sprintf("sso login_auth: %v", err)}
-		}
-		if res.Error != "" {
-			if local.Matched && local.AllBusy && local.ViaAlias && res.Error == "not_found" {
-				return Result{Decision: DecisionFail, Message: "local alias busy; not found on SSO"}
-			}
-			return Result{Decision: DecisionFail, Message: "sso: " + res.Error}
-		}
-		cipher, err := base64.StdEncoding.DecodeString(res.CipherB64)
-		if err != nil {
-			return Result{Decision: DecisionFail, Message: "bad cipher"}
-		}
-		out, err := protocol.SpliceCipherBlob(pkt, cipher)
-		res.CipherB64 = "" // best-effort wipe
-		if err != nil {
-			return Result{Decision: DecisionFail, Message: err.Error()}
-		}
-		return Result{Decision: DecisionSSO, Packet: out}
-	}
-
 	if local.Matched && local.AllBusy && local.ViaAlias {
 		return Result{Decision: DecisionFail, Message: "local alias busy; not found on SSO"}
 	}
 
-	_ = strings.TrimSpace
 	return Result{Decision: DecisionPassthrough, Packet: pkt}
+}
+
+func (r *Router) loginViaSSO(ctx context.Context, pkt []byte, typedUser string, local localdata.ResolveResult) Result {
+	res, err := r.SSO.LoginAuthWithRetry(ctx, uuid.NewString(), typedUser)
+	defer wipeLoginAuthResult(&res)
+	if err != nil {
+		return Result{Decision: DecisionFail, Message: fmt.Sprintf("sso login_auth: %v", err)}
+	}
+	if res.Error != "" {
+		if local.Matched && local.AllBusy && local.ViaAlias && res.Error == "not_found" {
+			return Result{Decision: DecisionFail, Message: "local alias busy; not found on SSO"}
+		}
+		return Result{Decision: DecisionFail, Message: "sso: " + res.Error}
+	}
+	cipher, err := base64.StdEncoding.DecodeString(res.CipherB64)
+	if err != nil {
+		return Result{Decision: DecisionFail, Message: "bad cipher"}
+	}
+	defer wipeBytes(cipher)
+
+	out, err := protocol.SpliceCipherBlob(pkt, cipher)
+	if err != nil {
+		return Result{Decision: DecisionFail, Message: err.Error()}
+	}
+	return Result{Decision: DecisionSSO, Packet: out}
+}
+
+func wipeBytes(b []byte) {
+	for i := range b {
+		b[i] = 0
+	}
+}
+
+func wipeLoginAuthResult(res *sso.LoginAuthResult) {
+	res.RealUser = ""
+	res.CipherB64 = ""
 }

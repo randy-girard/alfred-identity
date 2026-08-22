@@ -30,6 +30,8 @@ type fakeSSO struct {
 	names     map[string]bool
 	result    sso.LoginAuthResult
 	err       error
+	calls     int
+	lastUser  string
 }
 
 func (f *fakeSSO) Connected() bool { return f.connected }
@@ -37,6 +39,8 @@ func (f *fakeSSO) NameInMetadata(name string) bool {
 	return f.names[name]
 }
 func (f *fakeSSO) LoginAuthWithRetry(ctx context.Context, requestID, username string) (sso.LoginAuthResult, error) {
+	f.calls++
+	f.lastUser = username
 	return f.result, f.err
 }
 
@@ -109,6 +113,36 @@ func TestHandleLoginPacketSSO(t *testing.T) {
 	res := r.HandleLoginPacket(context.Background(), loginPacket(), "guildbox")
 	if res.Decision != DecisionSSO || len(res.Packet) == 0 {
 		t.Fatalf("%+v", res)
+	}
+	if fake.calls != 1 || fake.lastUser != "guildbox" {
+		t.Fatalf("login_auth calls=%d user=%q", fake.calls, fake.lastUser)
+	}
+}
+
+func TestHandleLoginPacketSSOPrefersDaemonOverLocalCSV(t *testing.T) {
+	dir := t.TempDir()
+	store := &localdata.Store{
+		AccountsPath:   filepath.Join(dir, "a.csv"),
+		CharactersPath: filepath.Join(dir, "c.csv"),
+	}
+	if err := store.UpsertAccount("guildbox", "local-secret", nil); err != nil {
+		t.Fatal(err)
+	}
+	ct := protocol.GoldenBytes()
+	fake := &fakeSSO{
+		connected: true,
+		names:     map[string]bool{"guildbox": true},
+		result: sso.LoginAuthResult{
+			CipherB64: base64.StdEncoding.EncodeToString(ct),
+		},
+	}
+	r := &Router{Local: store, SSO: fake}
+	res := r.HandleLoginPacket(context.Background(), loginPacket(), "guildbox")
+	if res.Decision != DecisionSSO {
+		t.Fatalf("expected SSO, got %+v", res)
+	}
+	if fake.calls != 1 {
+		t.Fatalf("expected login_auth, calls=%d", fake.calls)
 	}
 }
 
