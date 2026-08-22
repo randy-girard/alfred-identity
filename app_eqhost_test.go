@@ -8,6 +8,33 @@ import (
 	"github.com/alfred-identity/app/internal/sources"
 )
 
+func TestGetEqHostStateInvalidInstall(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+	mgr, err := sources.Load(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eqDir := filepath.Join(dir, "EverQuest")
+	if err := os.MkdirAll(eqDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := mgr.Update(func(c *sources.Config) { c.EQDirectory = eqDir }); err != nil {
+		t.Fatal(err)
+	}
+	badFile := filepath.Join(dir, "not-a-dir")
+	if err := os.WriteFile(badFile, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := mgr.Update(func(c *sources.Config) { c.EQDirectory = badFile }); err != nil {
+		t.Fatal(err)
+	}
+	a := &App{cfg: mgr}
+	if _, err := a.GetEqHostState(); err == nil {
+		t.Fatal("expected invalid install error")
+	}
+}
+
 func TestGetEqHostStateAndSave(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.json")
