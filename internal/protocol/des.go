@@ -120,39 +120,19 @@ func FindLoginCipherOffset(pkt []byte) (cipherStart, sublenIdx int, ok bool) {
 
 // SpliceLoginCredentials replaces DES ciphertext in a Combined Login packet.
 func SpliceLoginCredentials(pkt []byte, cipher []byte) ([]byte, error) {
-	start, sublenIdx, ok := FindLoginCipherOffset(pkt)
+	if lp, ok := ParseLoginPacket(pkt); ok {
+		return lp.SpliceEncryptedCredentials(cipher)
+	}
+	return nil, fmt.Errorf("login combined not found")
+}
+
+// RewriteLoginPacket packs new user/pass and splices using the p99 login layout.
+func RewriteLoginPacket(pkt []byte, username, password string) ([]byte, error) {
+	lp, ok := ParseLoginPacket(pkt)
 	if !ok {
 		return nil, fmt.Errorf("login combined not found")
 	}
-	oldEnd := len(pkt) // assume cipher runs to end of packet for simple cases
-	// Better: recompute from sublen
-	sublen := int(pkt[sublenIdx])
-	subStart := sublenIdx + 1
-	if sublen == 0xFF {
-		sublen = int(binary.BigEndian.Uint16(pkt[sublenIdx+1 : sublenIdx+3]))
-		subStart = sublenIdx + 3
-	}
-	oldEnd = subStart + sublen
-	prefix := pkt[:start]
-	suffix := pkt[oldEnd:]
-	out := append(append([]byte{}, prefix...), cipher...)
-	out = append(out, suffix...)
-
-	newSubLen := (start - subStart) + len(cipher)
-	if newSubLen > 0xFE {
-		return nil, fmt.Errorf("subpacket too large")
-	}
-	out[sublenIdx] = byte(newSubLen)
-	return out, nil
-}
-
-// RewriteLoginPacket decrypts nothing; packs new user/pass and splices.
-func RewriteLoginPacket(pkt []byte, username, password string) ([]byte, error) {
-	ct, err := EncryptCredentials(username, password)
-	if err != nil {
-		return nil, err
-	}
-	return SpliceLoginCredentials(pkt, ct)
+	return lp.RewriteCredentials(username, password)
 }
 
 // SpliceCipherBlob splices a pre-encrypted DES blob from the daemon.
