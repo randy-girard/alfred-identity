@@ -1,4 +1,10 @@
-.PHONY: test coverage test-unit coverage-html clean-coverage
+.PHONY: test coverage test-unit coverage-html clean-coverage dev build
+
+dev:
+	./scripts/dev.sh
+
+build:
+	./scripts/build.sh
 
 test test-unit:
 	./scripts/test.sh

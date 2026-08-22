@@ -8,7 +8,7 @@ Endpoint: `WS_PATH` (default `/ws/sso`). Production: terminate TLS at an externa
 
 ### `auth`
 ```json
-{ "type": "auth", "token": "<raw api token>", "protocol_version": 1, "client_version": "gui/0.1.0" }
+{ "type": "auth", "token": "<raw api token>", "protocol_version": 1, "client_version": "gui/dev-abc1234" }
 ```
 
 ### `get_state`

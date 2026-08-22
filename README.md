@@ -1,6 +1,6 @@
-# alfred-identity-app
+# alfred-identity
 
-Native desktop app (Wails v2) — local UDP login proxy and SSO client for the alfred-identity-web daemon.
+Native desktop GUI (Wails v2) — local UDP login proxy and SSO client for **alfred-identity-backend**.
 
 ## Requirements
 
@@ -12,22 +12,18 @@ Native desktop app (Wails v2) — local UDP login proxy and SSO client for the a
 
 ```bash
 cd alfred-identity-app
-wails dev
+./scripts/dev.sh
 ```
 
 ## Build
 
 ```bash
 cd alfred-identity-app
-wails build
+./scripts/build.sh
 # → build/bin/Alfred Identity.app (macOS) or equivalent
 ```
 
-Or:
-
-```bash
-./scripts/build.sh
-```
+`scripts/dev.sh` and `scripts/build.sh` stamp `main.Version` at link time from git (`dev-<short>` plus `+dirty` when needed). Release CI overrides with semver (`1.2.0`) from the release tag.
 
 ## Tests and coverage
 
@@ -49,7 +45,7 @@ The app lives in the **menu bar** (macOS: **AI** status item) or **system tray**
 
 ## First-time setup (with local daemon)
 
-1. Start the daemon (from `../alfred-identity-web`): `docker compose up --build`
+1. Start **alfred-identity-backend** (from `../alfred-identity-web`): `docker compose up --build`
 2. Create an SSO token in Discord (`/alfred-identity-sso create`) or with `go run ./cmd/seedtoken …` when Discord is disabled
 3. Open **Alfred Identity** → **Connections** → paste `http://127.0.0.1:8181` (or `…/sso-source.json`) → **Add from URL**, paste your token, then set mode to **Login w/ SSO**
 4. **EverQuest**: pick the install directory (log presence + `eqhost.txt`)
@@ -57,7 +53,7 @@ The app lives in the **menu bar** (macOS: **AI** status item) or **system tray**
 
 ## Config (SSO sources)
 
-Stored under the OS user config dir: `…/alfred-identity-gui/config.json`.
+Stored under the OS user config dir: `…/alfred-identity/config.json` (migrated automatically from `alfred-identity-gui`).
 
 Add sources in the UI (**Connections** → **Add from URL** using the guild’s `{origin}/sso-source.json`), or edit `sources` in the config file. Use **host** only (`host:port`); the app builds `ws(s)://{host}/ws/sso` when connecting (plain `ws` for localhost/LAN, `wss` for public hosts):
 
@@ -97,4 +93,4 @@ Local personal accounts CSV paths are also under that config directory by defaul
 
 - [docs/ws-api.md](docs/ws-api.md) — WebSocket contract (same as daemon)
 - [docs/protocol.md](docs/protocol.md) — login packet / DES notes
-- [../alfred-identity-web/README.md](../alfred-identity-web/README.md) — daemon Compose + Discord
+- [../alfred-identity-web/README.md](../alfred-identity-web/README.md) — alfred-identity-backend (Compose + Discord)
