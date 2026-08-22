@@ -1,8 +1,5 @@
-# Manual GUI release: create + push a semver tag, then run this workflow.
-#
-#   git tag v1.2.0
-#   git push origin v1.2.0
-#   GitHub → Actions → Release → Run workflow → tag: v1.2.0
+# Manual GUI release: GitHub → Actions → Release → enter tag (e.g. v1.2.0).
+# The workflow creates and pushes the tag on the current commit if it does not exist yet.
 #
 name: Release
 
@@ -10,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing release tag (e.g. v1.2.0)"
+        description: "Release tag (e.g. v1.2.0); created on this commit if missing"
         required: true
         type: string
 
@@ -32,8 +29,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Validate release tag
+      - name: Prepare release tag
         id: meta
+        env:
+          GITHUB_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           TAG="${{ github.event.inputs.tag }}"
@@ -46,16 +45,21 @@ jobs:
             exit 1
           fi
 
-          git fetch --tags --force
-          if ! git rev-parse "refs/tags/${TAG}^{commit}" >/dev/null 2>&1; then
-            echo "::error::Tag ${TAG} was not found. Create it locally and push to origin first."
-            exit 1
-          fi
-
           VERSION="${TAG#v}"
           PRERELEASE=false
           if [[ "$VERSION" == *-* ]]; then
             PRERELEASE=true
+          fi
+
+          git fetch --tags --force
+          if git rev-parse "refs/tags/${TAG}^{commit}" >/dev/null 2>&1; then
+            echo "Using existing tag ${TAG}"
+          else
+            echo "Creating tag ${TAG} on ${GITHUB_SHA}"
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "${TAG}" -m "Alfred Identity ${VERSION}" "${GITHUB_SHA}"
+            git push origin "refs/tags/${TAG}"
           fi
 
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"

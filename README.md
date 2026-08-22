@@ -52,6 +52,14 @@ cd alfred-identity
 
 `scripts/dev.sh` and `scripts/build.sh` stamp `app.Version` at link time from git (`dev-<short>`, plus `+dirty` when needed). Release CI overrides with semver from the release tag.
 
+## Release
+
+1. Push your changes to `main`.
+2. GitHub → **Actions** → **Release** → **Run workflow**.
+3. Enter a semver tag (e.g. `v1.2.0`). The workflow **creates and pushes the tag** on the current commit if it does not exist yet, then builds platform zip assets and publishes a GitHub Release.
+
+Pre-releases: use a suffix (e.g. `v1.2.0-beta.1`). Re-running the workflow for an **existing** tag rebuilds from that tag’s commit.
+
 ## Tests and coverage
 
 ```bash
