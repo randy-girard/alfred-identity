@@ -15,6 +15,7 @@ import (
 	"github.com/alfred-identity/app/internal/eqhost"
 	"github.com/alfred-identity/app/internal/eqpath"
 	"github.com/alfred-identity/app/internal/localdata"
+	"github.com/alfred-identity/app/internal/logbuf"
 	"github.com/alfred-identity/app/internal/logwatch"
 	"github.com/alfred-identity/app/internal/proxy"
 	"github.com/alfred-identity/app/internal/router"
@@ -71,6 +72,7 @@ func (a *App) confirmDialog(title, message, accept string) (bool, error) {
 type App struct {
 	ctx       context.Context
 	log       *slog.Logger
+	logBuf    *logbuf.Buffer
 	cfg       *sources.Manager
 	local     *localdata.Store
 	sso       *sso.Client
@@ -84,12 +86,35 @@ type App struct {
 var globalApp *App
 
 func NewApp() *App {
+	buf := logbuf.New(3000)
 	a := &App{
-		log: slog.New(slog.NewJSONHandler(os.Stdout, nil)),
-		sso: sso.NewClient(),
+		logBuf: buf,
+		log:    slog.New(logbuf.NewHandler(buf, os.Stdout)),
+		sso:    sso.NewClient(),
 	}
 	globalApp = a
 	return a
+}
+
+// GetLogs returns recent GUI log lines for the Logs tab.
+func (a *App) GetLogs(limit int) []logbuf.Entry {
+	if a.logBuf == nil {
+		return nil
+	}
+	if limit <= 0 {
+		limit = 500
+	}
+	if limit > 2000 {
+		limit = 2000
+	}
+	return a.logBuf.Recent(limit)
+}
+
+// ClearLogs removes buffered GUI log lines.
+func (a *App) ClearLogs() {
+	if a.logBuf != nil {
+		a.logBuf.Clear()
+	}
 }
 
 func (a *App) startup(ctx context.Context) {
