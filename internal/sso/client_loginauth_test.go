@@ -183,3 +183,435 @@ func TestAdminRPCRequiresAdmin(t *testing.T) {
 		t.Fatalf("err=%v", err)
 	}
 }
+
+func fullStateMessage(isAdmin bool) map[string]any {
+	return map[string]any{
+		"type":           "full_state",
+		"user_id":        int64(42),
+		"discord_id":     "discord-1",
+		"display_name":   "Tester",
+		"is_admin":       isAdmin,
+		"state":          map[string]any{"accounts": []any{}, "online": []any{}},
+		"admin":          map[string]any{"users": []any{}, "roles": []any{}},
+		"directory":      []any{},
+		"groups":         []any{},
+		"share_activity": map[string]any{"logins": []any{}, "online": []any{}},
+	}
+}
+
+func waitForSSOState(t *testing.T, c *Client, wantAdmin bool) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if c.UserID() != 0 && (!wantAdmin || c.IsAdmin()) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timeout connected=%v admin=%v user=%d", c.Connected(), c.IsAdmin(), c.UserID())
+}
+
+func startMockSSOServer(t *testing.T, onMessage func(typ string, data []byte) map[string]any) (wsURL string, cleanup func()) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+		if err != nil {
+			return
+		}
+		defer conn.Close(websocket.StatusNormalClosure, "")
+
+		for {
+			_, data, err := conn.Read(ctx)
+			if err != nil {
+				return
+			}
+			var tip struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(data, &tip) != nil {
+				continue
+			}
+			if resp := onMessage(tip.Type, data); resp != nil {
+				out, _ := json.Marshal(resp)
+				_ = conn.Write(ctx, websocket.MessageText, out)
+			}
+		}
+	}))
+	wsURL = "ws://" + strings.TrimPrefix(srv.URL, "http://") + "/ws"
+	return wsURL, func() {
+		cancel()
+		srv.Close()
+	}
+}
+
+func TestConnectReceivesFullState(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	wsURL, cleanup := startMockSSOServer(t, func(typ string, data []byte) map[string]any {
+		switch typ {
+		case "auth", "get_state":
+			return fullStateMessage(true)
+		default:
+			return nil
+		}
+	})
+	defer cleanup()
+
+	c := NewClient()
+	if err := c.Connect(ctx, wsURL, "token", "gui/test"); err != nil {
+		t.Fatal(err)
+	}
+	defer c.Disconnect()
+	waitForSSOState(t, c, true)
+
+	if !c.Connected() || !c.IsAdmin() || c.UserID() != 42 {
+		t.Fatalf("connected=%v admin=%v user=%d", c.Connected(), c.IsAdmin(), c.UserID())
+	}
+}
+
+func TestRefreshStateWaitsForFullState(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	wsURL, cleanup := startMockSSOServer(t, func(typ string, data []byte) map[string]any {
+		if typ == "auth" || typ == "get_state" {
+			return fullStateMessage(false)
+		}
+		return nil
+	})
+	defer cleanup()
+
+	c := NewClient()
+	if err := c.Connect(ctx, wsURL, "token", "gui/test"); err != nil {
+		t.Fatal(err)
+	}
+	defer c.Disconnect()
+	waitForSSOState(t, c, false)
+
+	if err := c.RefreshState(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if c.IsAdmin() {
+		t.Fatal("expected non-admin state")
+	}
+}
+
+func TestHeartbeatWhenConnected(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	heartbeatSeen := make(chan struct{}, 1)
+	wsURL, cleanup := startMockSSOServer(t, func(typ string, data []byte) map[string]any {
+		switch typ {
+		case "auth":
+			return fullStateMessage(false)
+		case "heartbeat":
+			select {
+			case heartbeatSeen <- struct{}{}:
+			default:
+			}
+		}
+		return nil
+	})
+	defer cleanup()
+
+	c := NewClient()
+	if err := c.Connect(ctx, wsURL, "token", "gui/test"); err != nil {
+		t.Fatal(err)
+	}
+	defer c.Disconnect()
+	waitForSSOState(t, c, false)
+
+	if err := c.Heartbeat(ctx, "Hero", false); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-heartbeatSeen:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected heartbeat message")
+	}
+}
+
+func TestAdminRemoveTagRoundTrip(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	wsURL, cleanup := startMockSSOServer(t, func(typ string, data []byte) map[string]any {
+		switch typ {
+		case "auth":
+			return fullStateMessage(true)
+		case "admin_remove_tag":
+			var msg struct {
+				RequestID string `json:"request_id"`
+			}
+			_ = json.Unmarshal(data, &msg)
+			return map[string]any{
+				"type": "admin_result", "request_id": msg.RequestID, "ok": true,
+			}
+		default:
+			return nil
+		}
+	})
+	defer cleanup()
+
+	c := NewClient()
+	if err := c.Connect(ctx, wsURL, "token", "gui/test"); err != nil {
+		t.Fatal(err)
+	}
+	defer c.Disconnect()
+	waitForSSOState(t, c, true)
+
+	res, err := c.AdminRemoveTag(ctx, "raid", 7)
+	if err != nil || !res.OK {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+}
+
+func TestAdminAddCharacterRoundTrip(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	wsURL, cleanup := startMockSSOServer(t, func(typ string, data []byte) map[string]any {
+		switch typ {
+		case "auth":
+			return fullStateMessage(true)
+		case "admin_add_character":
+			var msg struct {
+				RequestID string `json:"request_id"`
+			}
+			_ = json.Unmarshal(data, &msg)
+			return map[string]any{
+				"type": "admin_result", "request_id": msg.RequestID, "ok": true,
+			}
+		default:
+			return nil
+		}
+	})
+	defer cleanup()
+
+	c := NewClient()
+	if err := c.Connect(ctx, wsURL, "token", "gui/test"); err != nil {
+		t.Fatal(err)
+	}
+	defer c.Disconnect()
+	waitForSSOState(t, c, true)
+
+	res, err := c.AdminAddCharacter(ctx, "Hero", 7)
+	if err != nil || !res.OK {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+}
+
+func TestAdminAddAccountRoundTrip(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	wsURL, cleanup := startMockSSOServer(t, func(typ string, data []byte) map[string]any {
+		switch typ {
+		case "auth":
+			return fullStateMessage(true)
+		case "admin_add_account":
+			var msg struct {
+				RequestID string `json:"request_id"`
+			}
+			_ = json.Unmarshal(data, &msg)
+			return map[string]any{
+				"type": "admin_result", "request_id": msg.RequestID,
+				"ok": true, "account_id": int64(99),
+			}
+		default:
+			return nil
+		}
+	})
+	defer cleanup()
+
+	c := NewClient()
+	if err := c.Connect(ctx, wsURL, "token", "gui/test"); err != nil {
+		t.Fatal(err)
+	}
+	defer c.Disconnect()
+	waitForSSOState(t, c, true)
+
+	res, err := c.AdminAddAccount(ctx, "newbox", "secret", "")
+	if err != nil || !res.OK || res.AccountID != 99 {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+}
+
+func TestAdminAddAliasRoundTrip(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	wsURL, cleanup := startMockSSOServer(t, func(typ string, data []byte) map[string]any {
+		switch typ {
+		case "auth":
+			return fullStateMessage(true)
+		case "admin_add_alias":
+			var msg struct {
+				RequestID string `json:"request_id"`
+			}
+			_ = json.Unmarshal(data, &msg)
+			return map[string]any{
+				"type": "admin_result", "request_id": msg.RequestID, "ok": true,
+			}
+		default:
+			return nil
+		}
+	})
+	defer cleanup()
+
+	c := NewClient()
+	if err := c.Connect(ctx, wsURL, "token", "gui/test"); err != nil {
+		t.Fatal(err)
+	}
+	defer c.Disconnect()
+	waitForSSOState(t, c, true)
+
+	res, err := c.AdminAddAlias(ctx, "box", 7)
+	if err != nil || !res.OK {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+}
+
+func TestAdminSetUserRolesRoundTrip(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	wsURL, cleanup := startMockSSOServer(t, func(typ string, data []byte) map[string]any {
+		switch typ {
+		case "auth":
+			return fullStateMessage(true)
+		case "admin_set_user_roles":
+			var msg struct {
+				RequestID string `json:"request_id"`
+			}
+			_ = json.Unmarshal(data, &msg)
+			return map[string]any{
+				"type": "admin_result", "request_id": msg.RequestID, "ok": true,
+			}
+		default:
+			return nil
+		}
+	})
+	defer cleanup()
+
+	c := NewClient()
+	if err := c.Connect(ctx, wsURL, "token", "gui/test"); err != nil {
+		t.Fatal(err)
+	}
+	defer c.Disconnect()
+	waitForSSOState(t, c, true)
+
+	res, err := c.AdminSetUserRoles(ctx, 3, []string{"role1"})
+	if err != nil || !res.OK {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+}
+
+func TestAdminUpdateAccountRoundTrip(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	wsURL, cleanup := startMockSSOServer(t, func(typ string, data []byte) map[string]any {
+		switch typ {
+		case "auth":
+			return fullStateMessage(true)
+		case "admin_update_account":
+			var msg struct {
+				RequestID string `json:"request_id"`
+			}
+			_ = json.Unmarshal(data, &msg)
+			return map[string]any{
+				"type": "admin_result", "request_id": msg.RequestID, "ok": true,
+			}
+		default:
+			return nil
+		}
+	})
+	defer cleanup()
+
+	c := NewClient()
+	if err := c.Connect(ctx, wsURL, "token", "gui/test"); err != nil {
+		t.Fatal(err)
+	}
+	defer c.Disconnect()
+	waitForSSOState(t, c, true)
+
+	disabled := true
+	res, err := c.AdminUpdateAccount(ctx, 7, nil, &disabled, nil)
+	if err != nil || !res.OK {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+}
+
+func TestUnshareAccountRoundTrip(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	wsURL, cleanup := startMockSSOServer(t, func(typ string, data []byte) map[string]any {
+		switch typ {
+		case "auth":
+			return fullStateMessage(false)
+		case "unshare_account":
+			var msg struct {
+				RequestID string `json:"request_id"`
+			}
+			_ = json.Unmarshal(data, &msg)
+			return map[string]any{
+				"type": "share_result", "request_id": msg.RequestID, "ok": true,
+			}
+		default:
+			return nil
+		}
+	})
+	defer cleanup()
+
+	c := NewClient()
+	if err := c.Connect(ctx, wsURL, "token", "gui/test"); err != nil {
+		t.Fatal(err)
+	}
+	defer c.Disconnect()
+	waitForSSOState(t, c, false)
+
+	res, err := c.UnshareAccount(ctx, "box")
+	if err != nil || !res.OK {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+}
+
+func TestShareAccountRoundTrip(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	wsURL, cleanup := startMockSSOServer(t, func(typ string, data []byte) map[string]any {
+		switch typ {
+		case "auth":
+			return fullStateMessage(false)
+		case "share_account":
+			var msg struct {
+				RequestID string `json:"request_id"`
+			}
+			_ = json.Unmarshal(data, &msg)
+			return map[string]any{
+				"type": "share_result", "request_id": msg.RequestID, "ok": true, "account_id": int64(5),
+			}
+		default:
+			return nil
+		}
+	})
+	defer cleanup()
+
+	c := NewClient()
+	if err := c.Connect(ctx, wsURL, "token", "gui/test"); err != nil {
+		t.Fatal(err)
+	}
+	defer c.Disconnect()
+	waitForSSOState(t, c, false)
+
+	res, err := c.ShareAccount(ctx, "box", "pw", nil, nil)
+	if err != nil || !res.OK || res.AccountID != 5 {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+}
