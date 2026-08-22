@@ -761,27 +761,8 @@ export default function App() {
                   </div>
                 </div>
               ) : (
-                <>
-                  <div className="source-json-row compact">
-                    <textarea
-                      className="mono"
-                      value={sourceJSON}
-                      onChange={(e) => setSourceJSON(e.target.value)}
-                      placeholder="Paste another source JSON from Discord…"
-                      disabled={busy}
-                      rows={4}
-                    />
-                    <button
-                      type="button"
-                      className="secondary"
-                      disabled={busy || !sourceJSON.trim()}
-                      onClick={() => run(() => importSourceFromJSON(sourceJSON))}
-                    >
-                      Add from JSON
-                    </button>
-                  </div>
-                  <div className="table-wrap">
-                    <table className="data-table">
+                <div className="table-wrap">
+                  <table className="data-table">
                       <thead>
                         <tr>
                           <SortTh sortKey="name" sort={sourcesSort.sort} onSort={sourcesSort.onSort}>Name</SortTh>
@@ -821,7 +802,6 @@ export default function App() {
                       </tbody>
                     </table>
                   </div>
-                </>
               )}
             </div>
           </section>
