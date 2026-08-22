@@ -60,7 +60,7 @@ func (s *Server) Start(parent context.Context) error {
 			default:
 			}
 			_ = c.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
-			n, addr, err := c.ReadFromUDP(buf)
+			n, peer, err := c.ReadFromUDP(buf)
 			if err != nil {
 				if ctx.Err() != nil {
 					return
@@ -68,29 +68,37 @@ func (s *Server) Start(parent context.Context) error {
 				continue
 			}
 			pkt := append([]byte{}, buf[:n]...)
-			clientAddr = addr
 
-			if len(pkt) >= 2 && pkt[0] == 0x00 && pkt[1] == 0x03 {
-				if _, _, ok := protocol.FindLoginCipherOffset(pkt); ok {
-					user := extractUsernameHint(pkt)
-					if user != "" && s.Router != nil {
-						res := s.Router.HandleLoginPacket(ctx, pkt, user)
-						if res.Decision == router.DecisionFail {
-							log.Warn("login rewrite failed", "msg", res.Message)
-							continue
-						}
-						pkt = res.Packet
-						log.Info("login routed", "decision", string(res.Decision))
+			if isUpstreamPeer(peer, upAddr) {
+				if clientAddr == nil {
+					log.Debug("dropping upstream packet: no EQ client bound")
+					continue
+				}
+				if _, err := c.WriteToUDP(pkt, clientAddr); err != nil {
+					log.Warn("send to client failed", "err", err)
+				}
+				continue
+			}
+
+			clientAddr = peer
+			out := pkt
+			if isCombinedLogin(pkt) {
+				user := extractUsernameHint(pkt)
+				if user != "" && s.Router != nil {
+					res := s.Router.HandleLoginPacket(ctx, pkt, user)
+					switch res.Decision {
+					case router.DecisionFail:
+						log.Warn("login rewrite failed; forwarding original", "msg", res.Message, "user", user)
+						out = pkt
+					default:
+						out = res.Packet
+						log.Info("login routed", "decision", string(res.Decision), "user", user)
 					}
 				}
 			}
 
-			_, _ = c.WriteToUDP(pkt, upAddr)
-
-			_ = c.SetReadDeadline(time.Now().Add(2 * time.Second))
-			n2, _, err2 := c.ReadFromUDP(buf)
-			if err2 == nil && clientAddr != nil {
-				_, _ = c.WriteToUDP(buf[:n2], clientAddr)
+			if _, err := c.WriteToUDP(out, upAddr); err != nil {
+				log.Warn("send to upstream failed", "err", err)
 			}
 		}
 	}()
@@ -108,6 +116,21 @@ func (s *Server) Stop() {
 		_ = s.conn.Close()
 		s.conn = nil
 	}
+}
+
+func isUpstreamPeer(peer, upstream *net.UDPAddr) bool {
+	if peer == nil || upstream == nil {
+		return false
+	}
+	return peer.IP.Equal(upstream.IP) && peer.Port == upstream.Port
+}
+
+func isCombinedLogin(pkt []byte) bool {
+	if len(pkt) < 2 || pkt[0] != 0x00 || pkt[1] != 0x03 {
+		return false
+	}
+	_, _, ok := protocol.FindLoginCipherOffset(pkt)
+	return ok
 }
 
 func extractUsernameHint(pkt []byte) string {
