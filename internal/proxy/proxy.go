@@ -100,8 +100,8 @@ func (s *Server) Start(parent context.Context) error {
 					res := s.Router.HandleLoginPacket(ctx, pkt, user)
 					switch res.Decision {
 					case router.DecisionFail:
-						log.Warn("login rewrite failed; forwarding original", "msg", res.Message, "user", user)
-						out = pkt
+						log.Warn("login rewrite failed; not forwarding", "msg", res.Message, "user", user)
+						continue
 					default:
 						out = res.Packet
 						log.Info("login routed", "decision", string(res.Decision), "user", user)
