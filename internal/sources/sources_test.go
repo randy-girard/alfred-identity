@@ -29,6 +29,52 @@ func TestWebSocketURL(t *testing.T) {
 	if err != nil || got != "ws://guild.example.com:8181/ws/sso" {
 		t.Fatalf("override: got %q err %v", got, err)
 	}
+	got, err = WebSocketURL("http://guild.example.com:8181")
+	if err != nil || got != "ws://guild.example.com:8181/ws/sso" {
+		t.Fatalf("http: got %q err %v", got, err)
+	}
+	got, err = WebSocketURL("https://guild.example.com:8181")
+	if err != nil || got != "wss://guild.example.com:8181/ws/sso" {
+		t.Fatalf("https: got %q err %v", got, err)
+	}
+	got, err = WebSocketURL("10.0.0.5:8181")
+	if err != nil || got != "ws://10.0.0.5:8181/ws/sso" {
+		t.Fatalf("private: got %q err %v", got, err)
+	}
+	got, err = WebSocketURL("localhost:8181")
+	if err != nil || got != "ws://localhost:8181/ws/sso" {
+		t.Fatalf("localhost: got %q err %v", got, err)
+	}
+	got, err = WebSocketURL("guild.local:8181")
+	if err != nil || got != "ws://guild.local:8181/ws/sso" {
+		t.Fatalf(".local: got %q err %v", got, err)
+	}
+	got, err = WebSocketURL("wss://127.0.0.1:8181")
+	if err != nil || got != "wss://127.0.0.1:8181/ws/sso" {
+		t.Fatalf("explicit wss: got %q err %v", got, err)
+	}
+	if _, err := WebSocketURL(""); err == nil {
+		t.Fatal("empty")
+	}
+}
+
+func TestHostFromLegacyURLAndDialURL(t *testing.T) {
+	if got := HostFromLegacyURL("ws://10.0.0.5:8181/ws/sso"); got != "10.0.0.5:8181" {
+		t.Fatalf("%q", got)
+	}
+	if got := HostFromLegacyURL(""); got != "" {
+		t.Fatalf("%q", got)
+	}
+	src := Source{Host: "guild.example.com:8181"}
+	got, err := src.DialURL()
+	if err != nil || got != "wss://guild.example.com:8181/ws/sso" {
+		t.Fatalf("%q %v", got, err)
+	}
+	legacy := Source{URL: "ws://127.0.0.1:8181/ws/sso"}
+	got, err = legacy.DialURL()
+	if err != nil || got != "ws://127.0.0.1:8181/ws/sso" {
+		t.Fatalf("legacy dial %q %v", got, err)
+	}
 }
 
 func TestNormalizeSourceFetchURL(t *testing.T) {
