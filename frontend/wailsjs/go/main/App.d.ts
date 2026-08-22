@@ -29,7 +29,7 @@ export function OpenReleaseURL(arg1:string):Promise<void>;
 
 export function PickEQDirectory():Promise<string>;
 
-export function PreviewSourceURL(arg1:string):Promise<Array<main.SourceImportPreview>>;
+export function PreviewSourceJSON(arg1:string):Promise<Array<main.SourceImportPreview>>;
 
 export function SSOAdminAddAccount(arg1:string,arg2:string,arg3:string):Promise<void>;
 

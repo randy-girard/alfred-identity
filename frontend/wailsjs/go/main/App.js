@@ -54,8 +54,8 @@ export function PickEQDirectory() {
   return window['go']['main']['App']['PickEQDirectory']();
 }
 
-export function PreviewSourceURL(arg1) {
-  return window['go']['main']['App']['PreviewSourceURL'](arg1);
+export function PreviewSourceJSON(arg1) {
+  return window['go']['main']['App']['PreviewSourceJSON'](arg1);
 }
 
 export function SSOAdminAddAccount(arg1, arg2, arg3) {

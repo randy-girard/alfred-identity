@@ -1053,6 +1053,25 @@ button.secondary.danger:hover:not(:disabled) {
 .source-dropzone.compact {
   padding: 0.55rem 0.75rem;
 }
+.source-json-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin: 0.75rem 0;
+}
+.source-json-row.compact {
+  margin: 0.5rem 0 0.75rem;
+}
+.source-json-row textarea {
+  width: 100%;
+  min-height: 6rem;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.85rem;
+}
+.source-json-row.compact textarea {
+  min-height: 4.5rem;
+}
 .source-url-row {
   display: flex;
   gap: 0.5rem;

@@ -12,7 +12,7 @@ import {
   PickEQDirectory,
   SaveLocalAccount,
   SaveSource,
-  PreviewSourceURL,
+  PreviewSourceJSON,
   SetActiveSource,
   SetConnectionMode,
   SetEQDirectory,
@@ -367,7 +367,7 @@ export default function App() {
   const [shareForm, setShareForm] = useState({name: '', userIds: [], shared: false})
   const [sourcesModal, setSourcesModal] = useState(false)
   const [sourceForm, setSourceForm] = useState(null) // null = list view; object = edit/add
-  const [sourceURL, setSourceURL] = useState('')
+  const [sourceJSON, setSourceJSON] = useState('')
   const [eqDir, setEqDir] = useState('')
   const [listenPort, setListenPort] = useState('6998')
   const [busy, setBusy] = useState(false)
@@ -495,16 +495,16 @@ export default function App() {
     setSourceForm(null)
   }
 
-  async function importSourceFromURL(raw) {
-    const url = String(raw || '').trim()
-    if (!url) throw new Error('Enter a source URL')
-    const list = await PreviewSourceURL(url)
+  async function importSourceFromJSON(raw) {
+    const json = String(raw || '').trim()
+    if (!json) throw new Error('Paste source JSON from Discord /alfred-identity-sso get')
+    const list = await PreviewSourceJSON(json)
     const items = Array.isArray(list) ? list : []
     if (items.length === 0) {
-      throw new Error('No source found at that URL')
+      throw new Error('No source found in JSON')
     }
     const first = items[0] || {}
-    setSourceURL('')
+    setSourceJSON('')
     setSourcesModal(true)
     setSourceForm({
       id: '',
@@ -712,30 +712,24 @@ export default function App() {
                 <div className="source-dropzone empty-cta">
                   <h3>Add your first SSO source</h3>
                   <p>
-                    Paste the guild source URL from an officer (ends with{' '}
-                    <code>/sso-source.json</code>, or just the site origin). Then paste your
-                    Discord SSO token and set Connection mode to Login w/ SSO.
+                    Run <code>/alfred-identity-sso get</code> in Discord, copy the Alfred Identity
+                    source JSON, paste it below, then set Connection mode to Login w/ SSO.
                   </p>
-                  <div className="source-url-row">
-                    <input
+                  <div className="source-json-row">
+                    <textarea
                       className="mono"
-                      value={sourceURL}
-                      onChange={(e) => setSourceURL(e.target.value)}
-                      placeholder="http://127.0.0.1:8181/sso-source.json"
+                      value={sourceJSON}
+                      onChange={(e) => setSourceJSON(e.target.value)}
+                      placeholder={'{\n  "name": "Guild",\n  "host": "127.0.0.1:8181",\n  "token": "..."\n}'}
                       disabled={busy}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault()
-                          run(() => importSourceFromURL(sourceURL))
-                        }
-                      }}
+                      rows={6}
                     />
                     <button
                       type="button"
-                      disabled={busy || !sourceURL.trim()}
-                      onClick={() => run(() => importSourceFromURL(sourceURL))}
+                      disabled={busy || !sourceJSON.trim()}
+                      onClick={() => run(() => importSourceFromJSON(sourceJSON))}
                     >
-                      Add from URL
+                      Add from JSON
                     </button>
                   </div>
                   <div className="source-dropzone-actions">
@@ -746,33 +740,25 @@ export default function App() {
                       Enter details manually
                     </button>
                   </div>
-                  <p className="hint source-dropzone-example">
-                    Local daemon example: <code>http://127.0.0.1:8181</code>
-                  </p>
                 </div>
               ) : (
                 <>
-                  <div className="source-url-row compact">
-                    <input
+                  <div className="source-json-row compact">
+                    <textarea
                       className="mono"
-                      value={sourceURL}
-                      onChange={(e) => setSourceURL(e.target.value)}
-                      placeholder="Add another source by URL…"
+                      value={sourceJSON}
+                      onChange={(e) => setSourceJSON(e.target.value)}
+                      placeholder="Paste another source JSON from Discord…"
                       disabled={busy}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault()
-                          run(() => importSourceFromURL(sourceURL))
-                        }
-                      }}
+                      rows={4}
                     />
                     <button
                       type="button"
                       className="secondary"
-                      disabled={busy || !sourceURL.trim()}
-                      onClick={() => run(() => importSourceFromURL(sourceURL))}
+                      disabled={busy || !sourceJSON.trim()}
+                      onClick={() => run(() => importSourceFromJSON(sourceJSON))}
                     >
-                      Add from URL
+                      Add from JSON
                     </button>
                   </div>
                   <div className="table-wrap">
@@ -1566,31 +1552,25 @@ export default function App() {
             {!sourceForm ? (
               <>
                 <p className="hint">
-                  Add a guild daemon by pasting its source URL (
-                  <code>/sso-source.json</code>), or enter details manually. On the Connections
-                  tab, pick which source is active.
+                  Paste source JSON from Discord <code>/alfred-identity-sso get</code>, or enter
+                  details manually. On the Connections tab, pick which source is active.
                 </p>
-                <div className="source-url-row compact">
-                  <input
+                <div className="source-json-row compact">
+                  <textarea
                     className="mono"
-                    value={sourceURL}
-                    onChange={(e) => setSourceURL(e.target.value)}
-                    placeholder="http://127.0.0.1:8181/sso-source.json"
+                    value={sourceJSON}
+                    onChange={(e) => setSourceJSON(e.target.value)}
+                    placeholder="Paste Alfred Identity source JSON from Discord…"
                     disabled={busy}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        run(() => importSourceFromURL(sourceURL))
-                      }
-                    }}
+                    rows={5}
                   />
                   <button
                     type="button"
                     className="secondary"
-                    disabled={busy || !sourceURL.trim()}
-                    onClick={() => run(() => importSourceFromURL(sourceURL))}
+                    disabled={busy || !sourceJSON.trim()}
+                    onClick={() => run(() => importSourceFromJSON(sourceJSON))}
                   >
-                    Add from URL
+                    Add from JSON
                   </button>
                 </div>
                 <div className="row status-head">
@@ -1602,9 +1582,9 @@ export default function App() {
                 {sortedSources.length === 0 ? (
                   <div className="source-empty-modal">
                     <p>
-                      <strong>No SSO sources yet.</strong> Ask a guild officer for their source URL
-                      (for example <code>https://identity.example.com/sso-source.json</code>),
-                      add it above, then paste your personal SSO token from Discord.
+                      <strong>No SSO sources yet.</strong> Run{' '}
+                      <code>/alfred-identity-sso get</code> in Discord and paste the Alfred Identity
+                      source JSON above.
                     </p>
                   </div>
                 ) : (
@@ -1701,9 +1681,9 @@ export default function App() {
                 </p>
                 {sourceForm.fromImport ? (
                   <p className="hint">
-                    Loaded from URL. Paste your personal SSO token from Discord, then save
+                    Loaded from JSON. Review the fields, then save
                     {sourceForm.importExtra
-                      ? ` (${sourceForm.importExtra} more in the file will open next)`
+                      ? ` (${sourceForm.importExtra} more in the paste will open next)`
                       : ''}.
                   </p>
                 ) : null}
