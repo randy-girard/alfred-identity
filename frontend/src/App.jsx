@@ -13,6 +13,10 @@ import {
   SaveLocalAccount,
   SaveSource,
   PreviewSourceJSON,
+  GetEqHostState,
+  SaveEqHostContent,
+  RestoreEqHostBackup,
+  OpenEQDirectory,
   SetActiveSource,
   SetConnectionMode,
   SetEQDirectory,
@@ -369,6 +373,9 @@ export default function App() {
   const [sourceForm, setSourceForm] = useState(null) // null = list view; object = edit/add
   const [sourceJSON, setSourceJSON] = useState('')
   const [eqDir, setEqDir] = useState('')
+  const [eqHost, setEqHost] = useState({current: '', backup: '', has_backup: false})
+  const [eqHostEditing, setEqHostEditing] = useState(false)
+  const [eqHostDraft, setEqHostDraft] = useState('')
   const [listenPort, setListenPort] = useState('6998')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -413,6 +420,18 @@ export default function App() {
     }).catch(() => {})
     return () => clearInterval(id)
   }, [refresh, refreshLocal])
+
+  useEffect(() => {
+    if (tab !== 'eq') return
+    GetEqHostState()
+      .then((st) => {
+        const next = st || {current: '', backup: '', has_backup: false}
+        setEqHost(next)
+        setEqHostDraft(next.current || '')
+        setEqHostEditing(false)
+      })
+      .catch((e) => setError(String(e)))
+  }, [tab, status?.eq_directory])
 
   async function run(fn) {
     setBusy(true)
@@ -1254,13 +1273,114 @@ export default function App() {
                   Browse…
                 </button>
               </div>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => run(() => SetEQDirectory(eqDir))}
-              >
-                Save path
-              </button>
+              <div className="row eqhost-actions">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => run(() => SetEQDirectory(eqDir))}
+                >
+                  Save path
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy || !status?.eq_directory}
+                  onClick={() => run(() => OpenEQDirectory())}
+                >
+                  Open folder
+                </button>
+              </div>
+
+              {status?.eq_directory ? (
+                <>
+                  <div className="eqhost-block">
+                    <div className="row status-head">
+                      <h2 className="sub flush">eqhost.txt</h2>
+                      {!eqHostEditing ? (
+                        <button
+                          type="button"
+                          className="secondary"
+                          disabled={busy}
+                          onClick={() => {
+                            setEqHostDraft(eqHost.current || '')
+                            setEqHostEditing(true)
+                          }}
+                        >
+                          Edit
+                        </button>
+                      ) : (
+                        <div className="row eqhost-edit-actions">
+                          <button
+                            type="button"
+                            className="secondary"
+                            disabled={busy}
+                            onClick={() => {
+                              setEqHostDraft(eqHost.current || '')
+                              setEqHostEditing(false)
+                            }}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => run(async () => {
+                              await SaveEqHostContent(eqHostDraft)
+                              setEqHostEditing(false)
+                              const st = await GetEqHostState()
+                              setEqHost(st || {current: '', backup: '', has_backup: false})
+                              setEqHostDraft(st?.current || '')
+                            })}
+                          >
+                            Save
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <textarea
+                      className="mono eqhost-text"
+                      value={eqHostEditing ? eqHostDraft : (eqHost.current || '')}
+                      onChange={(e) => setEqHostDraft(e.target.value)}
+                      readOnly={!eqHostEditing}
+                      placeholder="eqhost.txt not found in the install directory"
+                      rows={6}
+                    />
+                    {!eqHost.current && !eqHostEditing ? (
+                      <p className="hint">No eqhost.txt yet. Click Edit to create one.</p>
+                    ) : null}
+                  </div>
+
+                  <div className="eqhost-block">
+                    <div className="row status-head">
+                      <h2 className="sub flush">Backup (eqhost.txt.bak)</h2>
+                      <button
+                        type="button"
+                        className="secondary"
+                        disabled={busy || !eqHost.has_backup}
+                        onClick={() => run(async () => {
+                          await RestoreEqHostBackup()
+                          const st = await GetEqHostState()
+                          setEqHost(st || {current: '', backup: '', has_backup: false})
+                          setEqHostDraft(st?.current || '')
+                          setEqHostEditing(false)
+                        })}
+                      >
+                        Restore backup
+                      </button>
+                    </div>
+                    <textarea
+                      className="mono eqhost-text readonly"
+                      value={eqHost.backup || ''}
+                      readOnly
+                      placeholder={eqHost.has_backup ? '' : 'No backup yet — saving eqhost.txt creates eqhost.txt.bak once'}
+                      rows={6}
+                    />
+                  </div>
+                </>
+              ) : (
+                <p className="hint">Save an EverQuest install path to view and edit eqhost.txt.</p>
+              )}
+
               {status?.online?.length > 0 && (
                 <>
                   <h2 className="sub">Online (from logs)</h2>

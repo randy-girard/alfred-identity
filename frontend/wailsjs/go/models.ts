@@ -1,5 +1,21 @@
 export namespace main {
 	
+	export class EqHostState {
+	    current: string;
+	    backup: string;
+	    has_backup: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new EqHostState(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.current = source["current"];
+	        this.backup = source["backup"];
+	        this.has_backup = source["has_backup"];
+	    }
+	}
 	export class LocalAccountDTO {
 	    name: string;
 	    password: string;

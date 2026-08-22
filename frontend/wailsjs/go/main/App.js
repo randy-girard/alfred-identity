@@ -22,6 +22,10 @@ export function ExportLocalAccountsCSV() {
   return window['go']['main']['App']['ExportLocalAccountsCSV']();
 }
 
+export function GetEqHostState() {
+  return window['go']['main']['App']['GetEqHostState']();
+}
+
 export function GetLocalAccounts() {
   return window['go']['main']['App']['GetLocalAccounts']();
 }
@@ -44,6 +48,10 @@ export function GetVersion() {
 
 export function ImportLocalAccountsCSV() {
   return window['go']['main']['App']['ImportLocalAccountsCSV']();
+}
+
+export function OpenEQDirectory() {
+  return window['go']['main']['App']['OpenEQDirectory']();
 }
 
 export function OpenReleaseURL(arg1) {
@@ -100,6 +108,14 @@ export function SSOAdminSetUserRoles(arg1, arg2) {
 
 export function SSOAdminUpdateAccount(arg1, arg2, arg3, arg4, arg5, arg6) {
   return window['go']['main']['App']['SSOAdminUpdateAccount'](arg1, arg2, arg3, arg4, arg5, arg6);
+}
+
+export function RestoreEqHostBackup() {
+  return window['go']['main']['App']['RestoreEqHostBackup']();
+}
+
+export function SaveEqHostContent(arg1) {
+  return window['go']['main']['App']['SaveEqHostContent'](arg1);
 }
 
 export function SaveLocalAccount(arg1, arg2, arg3) {

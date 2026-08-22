@@ -1088,6 +1088,29 @@ button.secondary.danger:hover:not(:disabled) {
   flex: 1;
   min-width: 0;
 }
+
+.eqhost-block {
+  margin-top: 1.25rem;
+}
+.eqhost-actions {
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.eqhost-edit-actions {
+  gap: 0.5rem;
+}
+.eqhost-text {
+  width: 100%;
+  min-height: 7rem;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.85rem;
+  margin-top: 0.5rem;
+}
+.eqhost-text[readonly],
+.eqhost-text.readonly {
+  opacity: 0.92;
+}
 .source-empty-modal {
   padding: 1rem;
   border: 1px solid var(--line);

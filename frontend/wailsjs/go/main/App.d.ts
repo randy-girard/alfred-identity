@@ -13,6 +13,8 @@ export function DeleteSource(arg1:string):Promise<void>;
 
 export function ExportLocalAccountsCSV():Promise<string>;
 
+export function GetEqHostState():Promise<main.EqHostState>;
+
 export function GetLocalAccounts():Promise<Array<main.LocalAccountDTO>>;
 
 export function GetLocalCharacters():Promise<Array<main.LocalCharacterDTO>>;
@@ -24,6 +26,8 @@ export function GetStatus():Promise<main.StatusDTO>;
 export function GetVersion():Promise<string>;
 
 export function ImportLocalAccountsCSV():Promise<string>;
+
+export function OpenEQDirectory():Promise<void>;
 
 export function OpenReleaseURL(arg1:string):Promise<void>;
 
@@ -52,6 +56,10 @@ export function SSOAdminSetUserAccess(arg1:number,arg2:boolean):Promise<void>;
 export function SSOAdminSetUserRoles(arg1:number,arg2:Array<string>):Promise<void>;
 
 export function SSOAdminUpdateAccount(arg1:number,arg2:string,arg3:boolean,arg4:boolean,arg5:string,arg6:boolean):Promise<void>;
+
+export function RestoreEqHostBackup():Promise<void>;
+
+export function SaveEqHostContent(arg1:string):Promise<void>;
 
 export function SaveLocalAccount(arg1:string,arg2:string,arg3:Array<string>):Promise<void>;
 
