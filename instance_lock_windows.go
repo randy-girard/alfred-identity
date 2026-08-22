@@ -15,7 +15,7 @@ var (
 )
 
 func acquireInstanceLock() error {
-	name, err := syscall.UTF16PtrFromString("Local\\com.alfred-identity.gui.instance")
+	name, err := syscall.UTF16PtrFromString("Local\\com.alfred-identity.app.instance")
 	if err != nil {
 		return err
 	}

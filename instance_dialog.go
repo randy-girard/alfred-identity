@@ -8,8 +8,8 @@ import (
 )
 
 func showAlreadyRunningError() {
-	const title = "Alfred Identity"
-	const msg = "Alfred Identity is already running.\n\nOnly one instance can be open at a time."
+	const title = AppName
+	const msg = AppName + " is already running.\n\nOnly one instance can be open at a time."
 
 	switch runtime.GOOS {
 	case "darwin":

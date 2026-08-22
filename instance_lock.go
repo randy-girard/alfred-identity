@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -19,16 +18,12 @@ func ensureSingleInstance() bool {
 }
 
 func instanceLockPath() (string, error) {
-	dir, err := os.UserConfigDir()
-	if err != nil || dir == "" {
-		dir = os.TempDir()
-	}
-	if dir == "" {
-		return "", fmt.Errorf("no config/temp dir for instance lock")
-	}
-	lockDir := filepath.Join(dir, "alfred-identity-gui")
-	if err := os.MkdirAll(lockDir, 0o700); err != nil {
+	dir, err := appConfigDir()
+	if err != nil {
 		return "", err
 	}
-	return filepath.Join(lockDir, instanceLockName), nil
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, instanceLockName), nil
 }

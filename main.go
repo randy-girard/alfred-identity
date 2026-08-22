@@ -22,7 +22,7 @@ func main() {
 	app := NewApp()
 
 	err := wails.Run(&options.App{
-		Title:     "Alfred Identity v" + Version,
+		Title:     AppName + " v" + Version,
 		Width:     920,
 		Height:    720,
 		MinWidth:  720,
@@ -44,12 +44,12 @@ func main() {
 		},
 		// Defense in depth: if a second process gets past our lock, focus the first.
 		SingleInstanceLock: &options.SingleInstanceLock{
-			UniqueId:               "com.alfred-identity.gui",
+			UniqueId:               "com.alfred-identity.app",
 			OnSecondInstanceLaunch: app.onSecondInstanceLaunch,
 		},
 		Mac: &mac.Options{
 			About: &mac.AboutInfo{
-				Title:   "Alfred Identity",
+				Title:   AppName,
 				Message: "Local login proxy + SSO\nVersion " + Version,
 			},
 		},
