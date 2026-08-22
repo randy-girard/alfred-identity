@@ -3,6 +3,7 @@ package p99proxy
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -24,10 +25,18 @@ func TestDiscoverRecursiveFindsNestedConfig(t *testing.T) {
 }
 
 func TestShouldSkipScanDirSkipsHeavyPaths(t *testing.T) {
-	if !shouldSkipScanDir("/Users/me/Library/Caches/Foo") {
-		t.Fatal("expected Library/Caches skip")
+	if !shouldSkipScanDir("/tmp/proj/node_modules") {
+		t.Fatal("expected node_modules skip")
 	}
-	if shouldSkipScanDir("/Users/me/Documents/P99LoginProxy") {
-		t.Fatal("should not skip documents install path")
+	if shouldSkipScanDir("/tmp/Documents/P99LoginProxy") {
+		t.Fatal("should not skip normal install path")
+	}
+	if runtime.GOOS == "darwin" {
+		if !shouldSkipScanDir("/Users/me/Library/Caches/Foo") {
+			t.Fatal("expected Library/Caches skip on macOS")
+		}
+		if shouldSkipScanDir("/Users/me/Documents/P99LoginProxy") {
+			t.Fatal("should not skip documents install path on macOS")
+		}
 	}
 }
