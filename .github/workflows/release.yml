@@ -117,13 +117,14 @@ jobs:
           APP_VERSION: ${{ needs.validate.outputs.version }}
           WAILS_TAGS: ${{ runner.os == 'Linux' && 'webkit2_41' || '' }}
         run: |
-          set -euo pipefail
-          TAGS=()
+          set -eo pipefail
           if [[ -n "${WAILS_TAGS}" ]]; then
-            TAGS=(-tags "${WAILS_TAGS}")
+            wails build -clean -platform "${{ matrix.wails_platform }}" -tags "${WAILS_TAGS}" \
+              -ldflags "-X github.com/alfred-identity/app/internal/app.Version=${APP_VERSION}"
+          else
+            wails build -clean -platform "${{ matrix.wails_platform }}" \
+              -ldflags "-X github.com/alfred-identity/app/internal/app.Version=${APP_VERSION}"
           fi
-          wails build -clean -platform "${{ matrix.wails_platform }}" "${TAGS[@]}" \
-            -ldflags "-X github.com/alfred-identity/app/internal/app.Version=${APP_VERSION}"
       - name: Package artifact
         if: runner.os != 'Windows'
         shell: bash
