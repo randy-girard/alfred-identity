@@ -106,14 +106,23 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev
       - name: Install Wails CLI
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: Build GUI
+        shell: bash
         env:
           APP_VERSION: ${{ needs.validate.outputs.version }}
+          WAILS_TAGS: ${{ runner.os == 'Linux' && 'webkit2_41' || '' }}
         run: |
-          wails build -clean -platform "${{ matrix.wails_platform }}" \
+          set -euo pipefail
+          TAGS=()
+          if [[ -n "${WAILS_TAGS}" ]]; then
+            TAGS=(-tags "${WAILS_TAGS}")
+          fi
+          wails build -clean -platform "${{ matrix.wails_platform }}" "${TAGS[@]}" \
             -ldflags "-X github.com/alfred-identity/app/internal/app.Version=${APP_VERSION}"
       - name: Package artifact
         if: runner.os != 'Windows'

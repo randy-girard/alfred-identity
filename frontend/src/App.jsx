@@ -34,7 +34,7 @@ import {
   DeleteSource,
   ShareLocalAccount,
   UnshareLocalAccount,
-} from '../wailsjs/go/main/App'
+} from '../wailsjs/go/app/App'
 
 const TABS = [
   {id: 'proxy', label: 'Connections'},
