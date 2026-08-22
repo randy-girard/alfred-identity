@@ -84,3 +84,52 @@ func TestDeleteSource(t *testing.T) {
 		t.Fatalf("%#v", cfg.Sources)
 	}
 }
+
+func TestConnectionModeLabelAndManagerMode(t *testing.T) {
+	if ConnectionLoginSSO.Label() != "Login w/ SSO" {
+		t.Fatal(ConnectionLoginSSO.Label())
+	}
+	if ConnectionLoginOnly.Label() != "Login Only" {
+		t.Fatal(ConnectionLoginOnly.Label())
+	}
+	if ConnectionMode("bogus").Label() != "Disabled" {
+		t.Fatal("bogus label")
+	}
+	dir := t.TempDir()
+	m, err := Load(filepath.Join(dir, "m.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = m.Update(func(c *Config) { c.ConnectionMode = ConnectionLoginOnly })
+	if m.Mode() != ConnectionLoginOnly {
+		t.Fatalf("%q", m.Mode())
+	}
+}
+
+func TestUpsertSourceKeepsTokenUnlessHostChanges(t *testing.T) {
+	dir := t.TempDir()
+	m, err := Load(filepath.Join(dir, "u.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = m.UpsertSource(Source{ID: "1", Name: "G", Host: "127.0.0.1:8181", Token: "secret"}, "")
+	_ = m.UpsertSource(Source{ID: "1", Name: "G", Host: "127.0.0.1:8181", Token: ""}, "127.0.0.1:8181")
+	src, _ := m.Active()
+	// Active may be empty; find by id
+	var found Source
+	for _, s := range m.Get().Sources {
+		if s.ID == "1" {
+			found = s
+		}
+	}
+	if found.Token != "secret" {
+		t.Fatalf("token cleared: %#v", found)
+	}
+	_ = m.UpsertSource(Source{ID: "1", Name: "G", Host: "10.0.0.1:8181", Token: ""}, "127.0.0.1:8181")
+	for _, s := range m.Get().Sources {
+		if s.ID == "1" && s.Token != "" {
+			t.Fatalf("expected token cleared on host change: %#v", s)
+		}
+	}
+	_ = src
+}

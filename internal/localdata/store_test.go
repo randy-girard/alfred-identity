@@ -94,3 +94,45 @@ func TestLoadMissingFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestUpsertAccountKeepsPassword(t *testing.T) {
+	dir := t.TempDir()
+	s := &Store{
+		AccountsPath:   filepath.Join(dir, "a.csv"),
+		CharactersPath: filepath.Join(dir, "c.csv"),
+	}
+	if err := s.UpsertAccount("main", "secret", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpsertAccount("main", "", []string{"nick"}); err != nil {
+		t.Fatal(err)
+	}
+	if s.Accounts[0].Password != "secret" {
+		t.Fatalf("%#v", s.Accounts[0])
+	}
+	found := false
+	for _, al := range s.Accounts[0].Aliases {
+		if al == "nick" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("aliases %#v", s.Accounts[0].Aliases)
+	}
+}
+
+func TestLoadLegacyCharactersHeader(t *testing.T) {
+	dir := t.TempDir()
+	acc := filepath.Join(dir, "a.csv")
+	chars := filepath.Join(dir, "c.csv")
+	if err := os.WriteFile(chars, []byte("name,account\nHero,main\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := &Store{AccountsPath: acc, CharactersPath: chars}
+	if err := s.loadCharacters(); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Characters) != 1 || s.Characters[0].Name != "Hero" || s.Characters[0].Account != "main" {
+		t.Fatalf("%#v", s.Characters)
+	}
+}
