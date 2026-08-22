@@ -99,6 +99,19 @@ func TestFindLoginCipherOffsetEdges(t *testing.T) {
 	if _, _, ok := FindLoginCipherOffset(ackOnly); ok {
 		t.Fatal("ack only")
 	}
+	// Sublen claims more bytes than remain
+	overrun := []byte{0x00, 0x03, 0x10, 0x00, 0x09}
+	if _, _, ok := FindLoginCipherOffset(overrun); ok {
+		t.Fatal("overrun")
+	}
+	// Packet sub with non-login app opcode
+	other := []byte{
+		0x00, 0x03,
+		0x08, 0x00, 0x09, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00,
+	}
+	if _, _, ok := FindLoginCipherOffset(other); ok {
+		t.Fatal("non-login app")
+	}
 	good := []byte{
 		0x00, 0x03,
 		0x04, 0x00, 0x15, 0x00, 0x00,
@@ -113,6 +126,12 @@ func TestFindLoginCipherOffsetEdges(t *testing.T) {
 	start, subIdx, ok := FindLoginCipherOffset(good)
 	if !ok || start <= 0 || subIdx != 7 {
 		t.Fatalf("start=%d subIdx=%d ok=%v", start, subIdx, ok)
+	}
+}
+
+func TestRewriteLoginPacketMissingCombined(t *testing.T) {
+	if _, err := RewriteLoginPacket([]byte{0x00, 0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, "u", "p"); err == nil {
+		t.Fatal("expected splice failure")
 	}
 }
 
