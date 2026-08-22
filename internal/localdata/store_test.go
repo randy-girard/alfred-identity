@@ -175,3 +175,48 @@ func TestDeleteAccountMissingAndExportEmpty(t *testing.T) {
 		t.Fatalf("n=%d err=%v", n, err)
 	}
 }
+
+func TestDeleteAccountDropsCharactersAndExport(t *testing.T) {
+	dir := t.TempDir()
+	s := &Store{
+		AccountsPath:   filepath.Join(dir, "a.csv"),
+		CharactersPath: filepath.Join(dir, "c.csv"),
+	}
+	if err := s.UpsertAccount("main", "pw", []string{"box"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpsertCharacter("main", "Hero"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpsertAccount("keep", "pw", nil); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, "export.csv")
+	n, err := s.ExportAccountsCSV(out)
+	if err != nil || n != 2 {
+		t.Fatalf("n=%d err=%v", n, err)
+	}
+	if err := s.DeleteAccount("main"); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Accounts) != 1 || s.Accounts[0].Name != "keep" {
+		t.Fatalf("%#v", s.Accounts)
+	}
+	if len(s.Characters) != 0 {
+		t.Fatalf("chars %#v", s.Characters)
+	}
+}
+
+func TestLoadMissingFilesOK(t *testing.T) {
+	dir := t.TempDir()
+	s := &Store{
+		AccountsPath:   filepath.Join(dir, "missing_a.csv"),
+		CharactersPath: filepath.Join(dir, "missing_c.csv"),
+	}
+	if err := s.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Accounts) != 0 || len(s.Characters) != 0 {
+		t.Fatal("expected empty")
+	}
+}
