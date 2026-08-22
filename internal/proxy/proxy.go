@@ -24,18 +24,30 @@ type Server struct {
 }
 
 func (s *Server) Start(parent context.Context) error {
-	addr, err := net.ResolveUDPAddr("udp", s.Listen)
+	upAddr, err := net.ResolveUDPAddr("udp", s.Upstream)
+	if err != nil {
+		return err
+	}
+
+	log := s.Log
+	if log == nil {
+		log = slog.Default()
+	}
+
+	bindAddr := s.Listen
+	if effective, changed := EffectiveBindAddr(s.Listen, upAddr); changed {
+		log.Warn("loopback bind cannot reach external upstream; using effective bind address",
+			"configured", s.Listen, "effective", effective, "upstream", s.Upstream)
+		bindAddr = effective
+	}
+
+	addr, err := net.ResolveUDPAddr("udp", bindAddr)
 	if err != nil {
 		return err
 	}
 	c, err := net.ListenUDP("udp", addr)
 	if err != nil {
 		return err // port in use → fail
-	}
-	upAddr, err := net.ResolveUDPAddr("udp", s.Upstream)
-	if err != nil {
-		_ = c.Close()
-		return err
 	}
 
 	ctx, cancel := context.WithCancel(parent)
@@ -44,10 +56,10 @@ func (s *Server) Start(parent context.Context) error {
 	s.cancel = cancel
 	s.mu.Unlock()
 
-	log := s.Log
-	if log == nil {
-		log = slog.Default()
-	}
+	log.Info("UDP login proxy listening",
+		"configured", s.Listen,
+		"bound", c.LocalAddr().String(),
+		"upstream", s.Upstream)
 
 	go func() {
 		defer c.Close()
