@@ -62,3 +62,16 @@ func TestCheckNotFound(t *testing.T) {
 		t.Fatalf("%+v", res)
 	}
 }
+
+func TestCheckHTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "nope", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	old := githubAPIBase
+	githubAPIBase = srv.URL
+	defer func() { githubAPIBase = old }()
+	if _, err := Check(context.Background(), "acme/app", "1.0.0"); err == nil {
+		t.Fatal("expected error")
+	}
+}
