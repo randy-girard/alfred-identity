@@ -42,7 +42,12 @@ type Router struct {
 	BusyFn func() map[string]bool // local account names busy
 }
 
-func (r *Router) HandleLoginPacket(ctx context.Context, pkt []byte, typedUser string) Result {
+func (r *Router) HandleLoginPacket(ctx context.Context, login *protocol.LoginPacket) Result {
+	if login == nil {
+		return Result{Decision: DecisionFail, Message: "missing login packet"}
+	}
+	typedUser := login.Username
+
 	busy := map[string]bool{}
 	if r.BusyFn != nil {
 		busy = r.BusyFn()
@@ -50,13 +55,12 @@ func (r *Router) HandleLoginPacket(ctx context.Context, pkt []byte, typedUser st
 
 	local := r.Local.ResolveLogin(typedUser, busy)
 
-	// SSO names always fetch ephemeral DES credentials from the daemon; never use local CSV passwords.
 	if r.SSO != nil && r.SSO.Connected() && r.SSO.NameInMetadata(typedUser) {
-		return r.loginViaSSO(ctx, pkt, typedUser, local)
+		return r.loginViaSSO(ctx, login, typedUser, local)
 	}
 
 	if local.Matched && local.Chosen != nil {
-		out, err := protocol.RewriteLoginPacket(pkt, local.Chosen.Name, local.Chosen.Password)
+		out, err := login.RewriteCredentials(local.Chosen.Name, local.Chosen.Password)
 		if err != nil {
 			return Result{Decision: DecisionFail, Message: err.Error()}
 		}
@@ -69,10 +73,10 @@ func (r *Router) HandleLoginPacket(ctx context.Context, pkt []byte, typedUser st
 		return Result{Decision: DecisionFail, Message: "local alias busy; not found on SSO"}
 	}
 
-	return Result{Decision: DecisionPassthrough, Packet: pkt}
+	return Result{Decision: DecisionPassthrough, Packet: login.Buf}
 }
 
-func (r *Router) loginViaSSO(ctx context.Context, pkt []byte, typedUser string, local localdata.ResolveResult) Result {
+func (r *Router) loginViaSSO(ctx context.Context, login *protocol.LoginPacket, typedUser string, local localdata.ResolveResult) Result {
 	res, err := r.SSO.LoginAuthWithRetry(ctx, uuid.NewString(), typedUser)
 	defer wipeLoginAuthResult(&res)
 	if err != nil {
@@ -90,7 +94,7 @@ func (r *Router) loginViaSSO(ctx context.Context, pkt []byte, typedUser string, 
 	}
 	defer wipeBytes(cipher)
 
-	out, err := protocol.SpliceCipherBlob(pkt, cipher)
+	out, err := login.SpliceEncryptedCredentials(cipher)
 	if err != nil {
 		return Result{Decision: DecisionFail, Message: err.Error()}
 	}

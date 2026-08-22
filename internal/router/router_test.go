@@ -11,7 +11,8 @@ import (
 	"github.com/alfred-identity/app/internal/sso"
 )
 
-func loginPacket() []byte {
+func testLoginPacket(t *testing.T) *protocol.LoginPacket {
+	t.Helper()
 	base := []byte{
 		0x00, 0x03,
 		0x04, 0x00, 0x15, 0x00, 0x00,
@@ -22,7 +23,12 @@ func loginPacket() []byte {
 		0x02,
 		0x00, 0x00, 0x00, 0x00,
 	}
-	return append(base, protocol.GoldenBytes()...)
+	base = append(base, protocol.GoldenBytes()...)
+	lp, ok := protocol.ParseLoginPacket(base)
+	if !ok {
+		t.Fatal("parse login packet")
+	}
+	return lp
 }
 
 type fakeSSO struct {
@@ -50,11 +56,12 @@ func TestHandleLoginPacketLocal(t *testing.T) {
 		AccountsPath:   filepath.Join(dir, "a.csv"),
 		CharactersPath: filepath.Join(dir, "c.csv"),
 	}
-	if err := store.UpsertAccount("eqbox", "secret", nil); err != nil {
+	if err := store.UpsertAccount("user", "secret", nil); err != nil {
 		t.Fatal(err)
 	}
 	r := &Router{Local: store}
-	res := r.HandleLoginPacket(context.Background(), loginPacket(), "eqbox")
+	login := testLoginPacket(t)
+	res := r.HandleLoginPacket(context.Background(), login)
 	if res.Decision != DecisionLocal || len(res.Packet) == 0 {
 		t.Fatalf("%+v", res)
 	}
@@ -66,14 +73,14 @@ func TestHandleLoginPacketBusy(t *testing.T) {
 		AccountsPath:   filepath.Join(dir, "a.csv"),
 		CharactersPath: filepath.Join(dir, "c.csv"),
 	}
-	_ = store.UpsertAccount("eqbox", "secret", nil)
+	_ = store.UpsertAccount("user", "secret", nil)
 	r := &Router{
 		Local: store,
 		BusyFn: func() map[string]bool {
-			return map[string]bool{"eqbox": true}
+			return map[string]bool{"user": true}
 		},
 	}
-	res := r.HandleLoginPacket(context.Background(), loginPacket(), "eqbox")
+	res := r.HandleLoginPacket(context.Background(), testLoginPacket(t))
 	if res.Decision != DecisionFail || res.Message == "" {
 		t.Fatalf("%+v", res)
 	}
@@ -86,8 +93,8 @@ func TestHandleLoginPacketPassthrough(t *testing.T) {
 		CharactersPath: filepath.Join(dir, "c.csv"),
 	}
 	r := &Router{Local: store}
-	pkt := loginPacket()
-	res := r.HandleLoginPacket(context.Background(), pkt, "unknown")
+	login := testLoginPacket(t)
+	res := r.HandleLoginPacket(context.Background(), login)
 	if res.Decision != DecisionPassthrough {
 		t.Fatalf("%+v", res)
 	}
@@ -102,19 +109,19 @@ func TestHandleLoginPacketSSO(t *testing.T) {
 	ct := protocol.GoldenBytes()
 	fake := &fakeSSO{
 		connected: true,
-		names:     map[string]bool{"guildbox": true},
+		names:     map[string]bool{"user": true},
 		result: sso.LoginAuthResult{
-			RealUser:  "guildbox",
 			CipherB64: base64.StdEncoding.EncodeToString(ct),
 			AccountID: 9,
 		},
 	}
 	r := &Router{Local: store, SSO: fake}
-	res := r.HandleLoginPacket(context.Background(), loginPacket(), "guildbox")
+	login := testLoginPacket(t)
+	res := r.HandleLoginPacket(context.Background(), login)
 	if res.Decision != DecisionSSO || len(res.Packet) == 0 {
 		t.Fatalf("%+v", res)
 	}
-	if fake.calls != 1 || fake.lastUser != "guildbox" {
+	if fake.calls != 1 || fake.lastUser != "user" {
 		t.Fatalf("login_auth calls=%d user=%q", fake.calls, fake.lastUser)
 	}
 }
@@ -125,19 +132,19 @@ func TestHandleLoginPacketSSOPrefersDaemonOverLocalCSV(t *testing.T) {
 		AccountsPath:   filepath.Join(dir, "a.csv"),
 		CharactersPath: filepath.Join(dir, "c.csv"),
 	}
-	if err := store.UpsertAccount("guildbox", "local-secret", nil); err != nil {
+	if err := store.UpsertAccount("user", "local-secret", nil); err != nil {
 		t.Fatal(err)
 	}
 	ct := protocol.GoldenBytes()
 	fake := &fakeSSO{
 		connected: true,
-		names:     map[string]bool{"guildbox": true},
+		names:     map[string]bool{"user": true},
 		result: sso.LoginAuthResult{
 			CipherB64: base64.StdEncoding.EncodeToString(ct),
 		},
 	}
 	r := &Router{Local: store, SSO: fake}
-	res := r.HandleLoginPacket(context.Background(), loginPacket(), "guildbox")
+	res := r.HandleLoginPacket(context.Background(), testLoginPacket(t))
 	if res.Decision != DecisionSSO {
 		t.Fatalf("expected SSO, got %+v", res)
 	}
@@ -166,7 +173,9 @@ func TestHandleLoginPacketAliasBusySSONotFound(t *testing.T) {
 			return map[string]bool{"a1": true, "a2": true}
 		},
 	}
-	res := r.HandleLoginPacket(context.Background(), loginPacket(), "shared")
+	login := testLoginPacket(t)
+	login.Username = "shared"
+	res := r.HandleLoginPacket(context.Background(), login)
 	if res.Decision != DecisionFail || res.Message != "local alias busy; not found on SSO" {
 		t.Fatalf("%+v", res)
 	}
@@ -185,7 +194,9 @@ func TestHandleLoginPacketLocalBusyAndSSOErrors(t *testing.T) {
 			return map[string]bool{"solo": true}
 		},
 	}
-	res := r.HandleLoginPacket(context.Background(), loginPacket(), "solo")
+	login := testLoginPacket(t)
+	login.Username = "solo"
+	res := r.HandleLoginPacket(context.Background(), login)
 	if res.Decision != DecisionFail || res.Message != "local account busy" {
 		t.Fatalf("busy: %+v", res)
 	}
@@ -196,7 +207,9 @@ func TestHandleLoginPacketLocalBusyAndSSOErrors(t *testing.T) {
 		err:       context.DeadlineExceeded,
 	}
 	r = &Router{Local: store, SSO: fake}
-	res = r.HandleLoginPacket(context.Background(), loginPacket(), "guild")
+	login = testLoginPacket(t)
+	login.Username = "guild"
+	res = r.HandleLoginPacket(context.Background(), login)
 	if res.Decision != DecisionFail || res.Message == "" {
 		t.Fatalf("sso err: %+v", res)
 	}
@@ -207,7 +220,8 @@ func TestHandleLoginPacketLocalBusyAndSSOErrors(t *testing.T) {
 		result:    sso.LoginAuthResult{Error: "denied"},
 	}
 	r = &Router{Local: store, SSO: fake}
-	res = r.HandleLoginPacket(context.Background(), loginPacket(), "guild")
+	login.Username = "guild"
+	res = r.HandleLoginPacket(context.Background(), login)
 	if res.Decision != DecisionFail || res.Message != "sso: denied" {
 		t.Fatalf("sso denied: %+v", res)
 	}
@@ -218,7 +232,8 @@ func TestHandleLoginPacketLocalBusyAndSSOErrors(t *testing.T) {
 		result:    sso.LoginAuthResult{CipherB64: "%%%"},
 	}
 	r = &Router{Local: store, SSO: fake}
-	res = r.HandleLoginPacket(context.Background(), loginPacket(), "guild")
+	login.Username = "guild"
+	res = r.HandleLoginPacket(context.Background(), login)
 	if res.Decision != DecisionFail || res.Message != "bad cipher" {
 		t.Fatalf("bad cipher: %+v", res)
 	}
@@ -231,7 +246,9 @@ func TestHandleLoginPacketLocalBusyAndSSOErrors(t *testing.T) {
 			return map[string]bool{"a1": true, "a2": true}
 		},
 	}
-	res = r.HandleLoginPacket(context.Background(), loginPacket(), "shared")
+	login = testLoginPacket(t)
+	login.Username = "shared"
+	res = r.HandleLoginPacket(context.Background(), login)
 	if res.Decision != DecisionFail || res.Message != "local alias busy; not found on SSO" {
 		t.Fatalf("alias busy no sso: %+v", res)
 	}

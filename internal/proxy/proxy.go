@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alfred-identity/app/internal/protocol"
 	"github.com/alfred-identity/app/internal/router"
 )
 
@@ -61,10 +60,11 @@ func (s *Server) Start(parent context.Context) error {
 		"bound", c.LocalAddr().String(),
 		"upstream", s.Upstream)
 
+	engine := &Engine{Router: s.Router, Log: log}
+
 	go func() {
 		defer c.Close()
 		buf := make([]byte, 65535)
-		var clientAddr *net.UDPAddr
 		for {
 			select {
 			case <-ctx.Done():
@@ -81,36 +81,21 @@ func (s *Server) Start(parent context.Context) error {
 			}
 			pkt := append([]byte{}, buf[:n]...)
 
-			if isUpstreamPeer(peer, upAddr) {
-				if clientAddr == nil {
-					log.Debug("dropping upstream packet: no EQ client bound")
-					continue
+			actions := engine.OnDatagram(ctx, pkt, peer, upAddr)
+			client := engine.ClientAddr()
+
+			for _, out := range engine.Finalize(actions.SendUpstream) {
+				if _, err := c.WriteToUDP(out, upAddr); err != nil {
+					log.Warn("send to upstream failed", "err", err)
 				}
-				if _, err := c.WriteToUDP(pkt, clientAddr); err != nil {
-					log.Warn("send to client failed", "err", err)
-				}
+			}
+			if client == nil {
 				continue
 			}
-
-			clientAddr = peer
-			out := pkt
-			if isCombinedLogin(pkt) {
-				user := extractUsernameHint(pkt)
-				if user != "" && s.Router != nil {
-					res := s.Router.HandleLoginPacket(ctx, pkt, user)
-					switch res.Decision {
-					case router.DecisionFail:
-						log.Warn("login rewrite failed; not forwarding", "msg", res.Message, "user", user)
-						continue
-					default:
-						out = res.Packet
-						log.Info("login routed", "decision", string(res.Decision), "user", user)
-					}
+			for _, out := range engine.Finalize(actions.SendClient) {
+				if _, err := c.WriteToUDP(out, client); err != nil {
+					log.Warn("send to client failed", "err", err)
 				}
-			}
-
-			if _, err := c.WriteToUDP(out, upAddr); err != nil {
-				log.Warn("send to upstream failed", "err", err)
 			}
 		}
 	}()
@@ -135,33 +120,4 @@ func isUpstreamPeer(peer, upstream *net.UDPAddr) bool {
 		return false
 	}
 	return peer.IP.Equal(upstream.IP) && peer.Port == upstream.Port
-}
-
-func isCombinedLogin(pkt []byte) bool {
-	if len(pkt) < 2 || pkt[0] != 0x00 || pkt[1] != 0x03 {
-		return false
-	}
-	_, _, ok := protocol.FindLoginCipherOffset(pkt)
-	return ok
-}
-
-func extractUsernameHint(pkt []byte) string {
-	start, _, ok := protocol.FindLoginCipherOffset(pkt)
-	if !ok {
-		return ""
-	}
-	ct := pkt[start:]
-	if len(ct) == 0 || len(ct)%8 != 0 {
-		return ""
-	}
-	pt, err := protocol.DecryptDES(ct)
-	if err != nil {
-		return ""
-	}
-	for i, b := range pt {
-		if b == 0 {
-			return string(pt[:i])
-		}
-	}
-	return ""
 }

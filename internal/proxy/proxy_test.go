@@ -9,18 +9,6 @@ import (
 	"github.com/alfred-identity/app/internal/protocol"
 )
 
-func TestIsUpstreamPeer(t *testing.T) {
-	up := &net.UDPAddr{IP: net.IPv4(1, 2, 3, 4), Port: 5998}
-	peer := &net.UDPAddr{IP: net.IPv4(1, 2, 3, 4), Port: 5998}
-	if !isUpstreamPeer(peer, up) {
-		t.Fatal("expected upstream peer match")
-	}
-	other := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 12345}
-	if isUpstreamPeer(other, up) {
-		t.Fatal("expected client peer mismatch")
-	}
-}
-
 func TestRelayBidirectional(t *testing.T) {
 	upstream, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0})
 	if err != nil {
@@ -40,13 +28,8 @@ func TestRelayBidirectional(t *testing.T) {
 	}
 	defer srv.Stop()
 
-	proxyAddr, err := net.ResolveUDPAddr("udp", srv.Listen)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Listen was "127.0.0.1:0" — resolve actual bound port from conn
 	srv.mu.Lock()
-	proxyAddr = srv.conn.LocalAddr().(*net.UDPAddr)
+	proxyAddr := srv.conn.LocalAddr().(*net.UDPAddr)
 	srv.mu.Unlock()
 
 	client, err := net.DialUDP("udp", nil, proxyAddr)
@@ -91,10 +74,11 @@ func TestRelayMultipleUpstreamPackets(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer upstream.Close()
+	upAddr := upstream.LocalAddr().(*net.UDPAddr)
 
 	srv := &Server{
 		Listen:   "127.0.0.1:0",
-		Upstream: upstream.LocalAddr().String(),
+		Upstream: upAddr.String(),
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -139,40 +123,19 @@ func TestRelayMultipleUpstreamPackets(t *testing.T) {
 	}
 }
 
-func loginPacket() []byte {
-	base := []byte{
-		0x00, 0x03,
-		0x04, 0x00, 0x15, 0x00, 0x00,
-		0x20, 0x00, 0x09, 0x00, 0x01,
-		0x02, 0x00,
-		0x03, 0x00, 0x00, 0x00,
-		0x00,
-		0x02,
-		0x00, 0x00, 0x00, 0x00,
+func TestIsUpstreamPeer(t *testing.T) {
+	up := &net.UDPAddr{IP: net.IPv4(1, 2, 3, 4), Port: 5998}
+	peer := &net.UDPAddr{IP: net.IPv4(1, 2, 3, 4), Port: 5998}
+	if !isUpstreamPeer(peer, up) {
+		t.Fatal("expected upstream peer match")
 	}
-	return append(base, protocol.GoldenBytes()...)
+	other := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 12345}
+	if isUpstreamPeer(other, up) {
+		t.Fatal("expected client peer mismatch")
+	}
 }
 
-func TestExtractUsernameHint(t *testing.T) {
-	hint := extractUsernameHint(loginPacket())
-	if hint != "user" {
-		t.Fatalf("got %q", hint)
-	}
-	if extractUsernameHint([]byte{1, 2, 3}) != "" {
-		t.Fatal("expected empty for short packet")
-	}
-	if extractUsernameHint([]byte{0x00, 0x01}) != "" {
-		t.Fatal("expected empty for non-combined")
-	}
-	badLen := loginPacket()
-	badLen = badLen[:len(badLen)-1]
-	if extractUsernameHint(badLen) != "" {
-		t.Fatal("expected empty for bad cipher len")
-	}
-	ct, err := protocol.EncryptDES([]byte("ABCDEFGH"))
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestExtractUsernameFromLoginPacket(t *testing.T) {
 	base := []byte{
 		0x00, 0x03,
 		0x04, 0x00, 0x15, 0x00, 0x00,
@@ -183,8 +146,9 @@ func TestExtractUsernameHint(t *testing.T) {
 		0x02,
 		0x00, 0x00, 0x00, 0x00,
 	}
-	noNul := append(base, ct...)
-	if extractUsernameHint(noNul) != "" {
-		t.Fatal("expected empty when plaintext has no NUL")
+	base = append(base, protocol.GoldenBytes()...)
+	lp, ok := protocol.ParseLoginPacket(base)
+	if !ok || lp.Username != "user" {
+		t.Fatalf("got %v ok=%v", lp, ok)
 	}
 }
