@@ -16,10 +16,10 @@ import (
 type Decision string
 
 const (
-	DecisionLocal      Decision = "local"
-	DecisionSSO        Decision = "sso"
+	DecisionLocal       Decision = "local"
+	DecisionSSO         Decision = "sso"
 	DecisionPassthrough Decision = "passthrough"
-	DecisionFail       Decision = "fail"
+	DecisionFail        Decision = "fail"
 )
 
 type Result struct {
@@ -28,10 +28,17 @@ type Result struct {
 	Message  string
 }
 
+// SSOAuth is the subset of SSO client used for login rewriting.
+type SSOAuth interface {
+	Connected() bool
+	NameInMetadata(name string) bool
+	LoginAuthWithRetry(ctx context.Context, requestID, username string) (sso.LoginAuthResult, error)
+}
+
 // Router implements local → SSO → passthrough per plan.
 type Router struct {
 	Local  *localdata.Store
-	SSO    *sso.Client
+	SSO    SSOAuth
 	Log    *slog.Logger
 	BusyFn func() map[string]bool // local account names busy
 }

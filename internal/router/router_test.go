@@ -2,11 +2,13 @@ package router
 
 import (
 	"context"
+	"encoding/base64"
 	"path/filepath"
 	"testing"
 
 	"github.com/alfred-identity/app/internal/localdata"
 	"github.com/alfred-identity/app/internal/protocol"
+	"github.com/alfred-identity/app/internal/sso"
 )
 
 func loginPacket() []byte {
@@ -21,6 +23,21 @@ func loginPacket() []byte {
 		0x00, 0x00, 0x00, 0x00,
 	}
 	return append(base, protocol.GoldenBytes()...)
+}
+
+type fakeSSO struct {
+	connected bool
+	names     map[string]bool
+	result    sso.LoginAuthResult
+	err       error
+}
+
+func (f *fakeSSO) Connected() bool { return f.connected }
+func (f *fakeSSO) NameInMetadata(name string) bool {
+	return f.names[name]
+}
+func (f *fakeSSO) LoginAuthWithRetry(ctx context.Context, requestID, username string) (sso.LoginAuthResult, error) {
+	return f.result, f.err
 }
 
 func TestHandleLoginPacketLocal(t *testing.T) {
@@ -68,6 +85,55 @@ func TestHandleLoginPacketPassthrough(t *testing.T) {
 	pkt := loginPacket()
 	res := r.HandleLoginPacket(context.Background(), pkt, "unknown")
 	if res.Decision != DecisionPassthrough {
+		t.Fatalf("%+v", res)
+	}
+}
+
+func TestHandleLoginPacketSSO(t *testing.T) {
+	dir := t.TempDir()
+	store := &localdata.Store{
+		AccountsPath:   filepath.Join(dir, "a.csv"),
+		CharactersPath: filepath.Join(dir, "c.csv"),
+	}
+	ct := protocol.GoldenBytes()
+	fake := &fakeSSO{
+		connected: true,
+		names:     map[string]bool{"guildbox": true},
+		result: sso.LoginAuthResult{
+			RealUser:  "guildbox",
+			CipherB64: base64.StdEncoding.EncodeToString(ct),
+			AccountID: 9,
+		},
+	}
+	r := &Router{Local: store, SSO: fake}
+	res := r.HandleLoginPacket(context.Background(), loginPacket(), "guildbox")
+	if res.Decision != DecisionSSO || len(res.Packet) == 0 {
+		t.Fatalf("%+v", res)
+	}
+}
+
+func TestHandleLoginPacketAliasBusySSONotFound(t *testing.T) {
+	dir := t.TempDir()
+	store := &localdata.Store{
+		AccountsPath:   filepath.Join(dir, "a.csv"),
+		CharactersPath: filepath.Join(dir, "c.csv"),
+	}
+	_ = store.UpsertAccount("a1", "p", []string{"shared"})
+	_ = store.UpsertAccount("a2", "p", []string{"shared"})
+	fake := &fakeSSO{
+		connected: true,
+		names:     map[string]bool{"shared": true},
+		result:    sso.LoginAuthResult{Error: "not_found"},
+	}
+	r := &Router{
+		Local: store,
+		SSO:   fake,
+		BusyFn: func() map[string]bool {
+			return map[string]bool{"a1": true, "a2": true}
+		},
+	}
+	res := r.HandleLoginPacket(context.Background(), loginPacket(), "shared")
+	if res.Decision != DecisionFail || res.Message != "local alias busy; not found on SSO" {
 		t.Fatalf("%+v", res)
 	}
 }
