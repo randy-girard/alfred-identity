@@ -137,3 +137,68 @@ func TestHandleLoginPacketAliasBusySSONotFound(t *testing.T) {
 		t.Fatalf("%+v", res)
 	}
 }
+
+func TestHandleLoginPacketLocalBusyAndSSOErrors(t *testing.T) {
+	dir := t.TempDir()
+	store := &localdata.Store{
+		AccountsPath:   filepath.Join(dir, "a.csv"),
+		CharactersPath: filepath.Join(dir, "c.csv"),
+	}
+	_ = store.UpsertAccount("solo", "p", nil)
+	r := &Router{
+		Local: store,
+		BusyFn: func() map[string]bool {
+			return map[string]bool{"solo": true}
+		},
+	}
+	res := r.HandleLoginPacket(context.Background(), loginPacket(), "solo")
+	if res.Decision != DecisionFail || res.Message != "local account busy" {
+		t.Fatalf("busy: %+v", res)
+	}
+
+	fake := &fakeSSO{
+		connected: true,
+		names:     map[string]bool{"guild": true},
+		err:       context.DeadlineExceeded,
+	}
+	r = &Router{Local: store, SSO: fake}
+	res = r.HandleLoginPacket(context.Background(), loginPacket(), "guild")
+	if res.Decision != DecisionFail || res.Message == "" {
+		t.Fatalf("sso err: %+v", res)
+	}
+
+	fake = &fakeSSO{
+		connected: true,
+		names:     map[string]bool{"guild": true},
+		result:    sso.LoginAuthResult{Error: "denied"},
+	}
+	r = &Router{Local: store, SSO: fake}
+	res = r.HandleLoginPacket(context.Background(), loginPacket(), "guild")
+	if res.Decision != DecisionFail || res.Message != "sso: denied" {
+		t.Fatalf("sso denied: %+v", res)
+	}
+
+	fake = &fakeSSO{
+		connected: true,
+		names:     map[string]bool{"guild": true},
+		result:    sso.LoginAuthResult{CipherB64: "%%%"},
+	}
+	r = &Router{Local: store, SSO: fake}
+	res = r.HandleLoginPacket(context.Background(), loginPacket(), "guild")
+	if res.Decision != DecisionFail || res.Message != "bad cipher" {
+		t.Fatalf("bad cipher: %+v", res)
+	}
+
+	_ = store.UpsertAccount("a1", "p", []string{"shared"})
+	_ = store.UpsertAccount("a2", "p", []string{"shared"})
+	r = &Router{
+		Local: store,
+		BusyFn: func() map[string]bool {
+			return map[string]bool{"a1": true, "a2": true}
+		},
+	}
+	res = r.HandleLoginPacket(context.Background(), loginPacket(), "shared")
+	if res.Decision != DecisionFail || res.Message != "local alias busy; not found on SSO" {
+		t.Fatalf("alias busy no sso: %+v", res)
+	}
+}
