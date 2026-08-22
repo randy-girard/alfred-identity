@@ -13,7 +13,7 @@ for arg in "$@"; do
   esac
 done
 
-PKGS=$(go list ./internal/...)
+PKGS=$(go list ./...)
 
 if [[ "$COVERAGE" -eq 1 ]]; then
   mkdir -p coverage
