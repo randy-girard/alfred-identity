@@ -1119,3 +1119,83 @@ button.secondary.danger:hover:not(:disabled) {
   margin-bottom: 0.75rem;
 }
 .source-empty-modal p { margin: 0; color: var(--muted); line-height: 1.45; }
+
+.logs-panel .logs-scroll {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.log-view {
+  flex: 1 1 auto;
+  min-height: 12rem;
+  max-height: calc(100vh - 14rem);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  padding: 0.5rem 0.65rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.log-line {
+  display: grid;
+  grid-template-columns: 11rem 4rem 1fr;
+  gap: 0.5rem;
+  padding: 0.15rem 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+}
+
+.log-line:last-child {
+  border-bottom: 0;
+}
+
+.log-time {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.log-level {
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+}
+
+.log-line.level-warn .log-level,
+.log-line.level-warning .log-level {
+  color: var(--warn);
+}
+
+.log-line.level-error .log-level {
+  color: var(--bad);
+}
+
+.log-line.level-debug .log-level {
+  color: var(--muted);
+}
+
+.log-msg {
+  word-break: break-word;
+}
+
+.log-attrs {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  padding-left: 0.25rem;
+}
+
+.checkbox-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-right: 0.5rem;
+}
+
+.checkbox-inline input {
+  width: auto;
+  margin: 0;
+}

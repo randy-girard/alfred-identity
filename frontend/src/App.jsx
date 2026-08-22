@@ -2,9 +2,11 @@ import {useCallback, useEffect, useLayoutEffect, useRef, useState} from 'react'
 import {createPortal} from 'react-dom'
 import './App.css'
 import {
+  ClearLogs,
   CheckUpdate,
   DeleteLocalAccount,
   GetLocalAccounts,
+  GetLogs,
   GetStatus,
   ImportLocalAccountsCSV,
   ExportLocalAccountsCSV,
@@ -30,6 +32,7 @@ const TABS = [
   {id: 'proxy', label: 'Connections'},
   {id: 'accounts', label: 'Accounts'},
   {id: 'eq', label: 'EverQuest'},
+  {id: 'logs', label: 'Logs'},
   {id: 'settings', label: 'Settings'},
 ]
 
@@ -381,6 +384,9 @@ export default function App() {
   const [error, setError] = useState('')
   const [update, setUpdate] = useState(null)
   const [theme, setTheme] = useState(() => readStoredTheme())
+  const [logs, setLogs] = useState([])
+  const logEndRef = useRef(null)
+  const [logAutoScroll, setLogAutoScroll] = useState(true)
 
   useEffect(() => {
     applyTheme(theme)
@@ -432,6 +438,30 @@ export default function App() {
       })
       .catch((e) => setError(String(e)))
   }, [tab, status?.eq_directory])
+
+  useEffect(() => {
+    if (tab !== 'logs') return
+    let cancelled = false
+    const load = async () => {
+      try {
+        const lines = await GetLogs(1000)
+        if (!cancelled) setLogs(lines || [])
+      } catch (e) {
+        if (!cancelled) setError(String(e))
+      }
+    }
+    load()
+    const id = setInterval(load, 1500)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+    }
+  }, [tab])
+
+  useEffect(() => {
+    if (tab !== 'logs' || !logAutoScroll) return
+    logEndRef.current?.scrollIntoView({behavior: 'smooth'})
+  }, [logs, tab, logAutoScroll])
 
   async function run(fn) {
     setBusy(true)
@@ -763,45 +793,45 @@ export default function App() {
               ) : (
                 <div className="table-wrap">
                   <table className="data-table">
-                      <thead>
-                        <tr>
-                          <SortTh sortKey="name" sort={sourcesSort.sort} onSort={sourcesSort.onSort}>Name</SortTh>
-                          <SortTh sortKey="host" sort={sourcesSort.sort} onSort={sourcesSort.onSort}>Host</SortTh>
-                          <SortTh sortKey="status" sort={sourcesSort.sort} onSort={sourcesSort.onSort}>Status</SortTh>
-                          <th className="col-actions">Active</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {sortedSources.map((src) => {
-                          const active = src.id === status?.active_source
-                          const connected = active && status?.sso_connected
-                          return (
-                            <tr key={src.id} className={active ? 'row-selected' : ''}>
-                              <td>{src.name || src.id}</td>
-                              <td className="mono">{src.host || '—'}</td>
-                              <td>
-                                {connected ? 'connected' : active ? 'active' : '—'}
-                              </td>
-                              <td className="col-actions">
-                                {active ? (
-                                  <span className="badge live">active</span>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    className="secondary"
-                                    disabled={busy}
-                                    onClick={() => run(() => SetActiveSource(src.id))}
-                                  >
-                                    Use this source
-                                  </button>
-                                )}
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                    <thead>
+                      <tr>
+                        <SortTh sortKey="name" sort={sourcesSort.sort} onSort={sourcesSort.onSort}>Name</SortTh>
+                        <SortTh sortKey="host" sort={sourcesSort.sort} onSort={sourcesSort.onSort}>Host</SortTh>
+                        <SortTh sortKey="status" sort={sourcesSort.sort} onSort={sourcesSort.onSort}>Status</SortTh>
+                        <th className="col-actions">Active</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedSources.map((src) => {
+                        const active = src.id === status?.active_source
+                        const connected = active && status?.sso_connected
+                        return (
+                          <tr key={src.id} className={active ? 'row-selected' : ''}>
+                            <td>{src.name || src.id}</td>
+                            <td className="mono">{src.host || '—'}</td>
+                            <td>
+                              {connected ? 'connected' : active ? 'active' : '—'}
+                            </td>
+                            <td className="col-actions">
+                              {active ? (
+                                <span className="badge live">active</span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="secondary"
+                                  disabled={busy}
+                                  onClick={() => run(() => SetActiveSource(src.id))}
+                                >
+                                  Use this source
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
           </section>
@@ -1367,6 +1397,55 @@ export default function App() {
                   <p className="meta">{status.online.join(', ')}</p>
                 </>
               )}
+            </div>
+          </section>
+        )}
+
+        {tab === 'logs' && (
+          <section className="panel logs-panel">
+            <div className="panel-scroll logs-scroll">
+              <div className="row status-head">
+                <h2 className="flush">Application log</h2>
+                <div className="row">
+                  <label className="checkbox-inline">
+                    <input
+                      type="checkbox"
+                      checked={logAutoScroll}
+                      onChange={(e) => setLogAutoScroll(e.target.checked)}
+                    />
+                    Auto-scroll
+                  </label>
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={busy}
+                    onClick={() => run(async () => {
+                      await ClearLogs()
+                      setLogs([])
+                    })}
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+              <p className="hint">
+                Proxy, SSO, eqhost, and other backend activity. Refreshes while this tab is open.
+              </p>
+              <div className="log-view" role="log" aria-live="polite" aria-relevant="additions">
+                {logs.length === 0 ? (
+                  <p className="empty">No log entries yet.</p>
+                ) : (
+                  logs.map((line, i) => (
+                    <div key={`${line.time}-${i}`} className={`log-line level-${(line.level || 'info').toLowerCase()}`}>
+                      <span className="log-time">{line.time}</span>
+                      <span className="log-level">{line.level}</span>
+                      <span className="log-msg">{line.message}</span>
+                      {line.attrs ? <span className="log-attrs">{line.attrs}</span> : null}
+                    </div>
+                  ))
+                )}
+                <div ref={logEndRef} />
+              </div>
             </div>
           </section>
         )}

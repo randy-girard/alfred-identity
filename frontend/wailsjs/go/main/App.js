@@ -6,6 +6,10 @@ export function CheckUpdate() {
   return window['go']['main']['App']['CheckUpdate']();
 }
 
+export function ClearLogs() {
+  return window['go']['main']['App']['ClearLogs']();
+}
+
 export function DeleteLocalAccount(arg1) {
   return window['go']['main']['App']['DeleteLocalAccount'](arg1);
 }
@@ -32,6 +36,10 @@ export function GetLocalAccounts() {
 
 export function GetLocalCharacters() {
   return window['go']['main']['App']['GetLocalCharacters']();
+}
+
+export function GetLogs(arg1) {
+  return window['go']['main']['App']['GetLogs'](arg1);
 }
 
 export function GetSources() {
@@ -64,6 +72,10 @@ export function PickEQDirectory() {
 
 export function PreviewSourceJSON(arg1) {
   return window['go']['main']['App']['PreviewSourceJSON'](arg1);
+}
+
+export function RestoreEqHostBackup() {
+  return window['go']['main']['App']['RestoreEqHostBackup']();
 }
 
 export function SSOAdminAddAccount(arg1, arg2, arg3) {
@@ -108,10 +120,6 @@ export function SSOAdminSetUserRoles(arg1, arg2) {
 
 export function SSOAdminUpdateAccount(arg1, arg2, arg3, arg4, arg5, arg6) {
   return window['go']['main']['App']['SSOAdminUpdateAccount'](arg1, arg2, arg3, arg4, arg5, arg6);
-}
-
-export function RestoreEqHostBackup() {
-  return window['go']['main']['App']['RestoreEqHostBackup']();
 }
 
 export function SaveEqHostContent(arg1) {
