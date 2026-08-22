@@ -58,6 +58,20 @@ func TestHandlerEnabled(t *testing.T) {
 	}
 }
 
+func TestHandlerWithAttrsAndGroup(t *testing.T) {
+	buf := New(10)
+	h := NewHandler(buf, ioDiscard{})
+	h2 := h.WithAttrs([]slog.Attr{slog.String("k", "v")}).WithGroup("g")
+	if h2 == nil {
+		t.Fatal("expected chained handler")
+	}
+	log := slog.New(h2)
+	log.Info("nested")
+	if len(buf.Recent(1)) != 1 {
+		t.Fatal("expected captured log")
+	}
+}
+
 type ioDiscard struct{}
 
 func (ioDiscard) Write(p []byte) (int, error) { return len(p), nil }

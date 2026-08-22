@@ -7,6 +7,25 @@ import (
 	"testing"
 )
 
+func TestEnableMapsAllInterfacesListenAddr(t *testing.T) {
+	dir := t.TempDir()
+	changed, err := Enable(dir, "0.0.0.0:7777")
+	if err != nil || !changed {
+		t.Fatalf("changed=%v err=%v", changed, err)
+	}
+	got := Describe(dir)
+	if !strings.Contains(got, "Host=127.0.0.1:7777") {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestEnableRejectsEmptyListen(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Enable(dir, ""); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
 func TestEnableDisableRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	orig := filepath.Join(dir, "eqhost.txt")
