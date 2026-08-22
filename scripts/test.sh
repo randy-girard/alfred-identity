@@ -13,7 +13,8 @@ for arg in "$@"; do
   esac
 done
 
-PKGS=$(go list ./...)
+# Root main embeds frontend/dist (Wails); skip it — all unit tests live under internal/.
+PKGS=$(go list ./internal/...)
 
 if [[ "$COVERAGE" -eq 1 ]]; then
   mkdir -p coverage
