@@ -82,6 +82,40 @@ func TestDecryptDESAndSpliceCipherBlob(t *testing.T) {
 	}
 }
 
+func TestFindLoginCipherOffsetEdges(t *testing.T) {
+	if _, _, ok := FindLoginCipherOffset([]byte{1, 2, 3}); ok {
+		t.Fatal("too short")
+	}
+	if _, _, ok := FindLoginCipherOffset([]byte{0x00, 0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}); ok {
+		t.Fatal("wrong opcode")
+	}
+	// Combined + truncated 0xFF length
+	bad := []byte{0x00, 0x03, 0xFF}
+	if _, _, ok := FindLoginCipherOffset(bad); ok {
+		t.Fatal("truncated ff")
+	}
+	// Combined Ack only (no login packet)
+	ackOnly := []byte{0x00, 0x03, 0x04, 0x00, 0x15, 0x00, 0x00}
+	if _, _, ok := FindLoginCipherOffset(ackOnly); ok {
+		t.Fatal("ack only")
+	}
+	good := []byte{
+		0x00, 0x03,
+		0x04, 0x00, 0x15, 0x00, 0x00,
+		0x20, 0x00, 0x09, 0x00, 0x01,
+		0x02, 0x00,
+		0x03, 0x00, 0x00, 0x00,
+		0x00,
+		0x02,
+		0x00, 0x00, 0x00, 0x00,
+	}
+	good = append(good, GoldenBytes()...)
+	start, subIdx, ok := FindLoginCipherOffset(good)
+	if !ok || start <= 0 || subIdx != 7 {
+		t.Fatalf("start=%d subIdx=%d ok=%v", start, subIdx, ok)
+	}
+}
+
 func hexEncode(b []byte) string {
 	const h = "0123456789abcdef"
 	out := make([]byte, len(b)*2)
