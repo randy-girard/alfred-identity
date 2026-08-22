@@ -40,6 +40,19 @@ func (w *Watcher) OnlineCharacters() []string {
 	return out
 }
 
+// SetOnlineForTest marks a character as recently active (for tests).
+func (w *Watcher) SetOnlineForTest(character string) {
+	if w == nil {
+		return
+	}
+	w.mu.Lock()
+	if w.online == nil {
+		w.online = make(map[string]time.Time)
+	}
+	w.online[character] = time.Now()
+	w.mu.Unlock()
+}
+
 func (w *Watcher) Run(ctx context.Context) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()

@@ -152,6 +152,57 @@ func NewClient() *Client {
 	}
 }
 
+// TestClientState seeds getter state for unit tests without a live websocket.
+type TestClientState struct {
+	Connected     bool
+	Admin         bool
+	UserID        int64
+	Accounts      []AccountMeta
+	ShareActivity ShareActivity
+	Directory     []DirectoryUser
+	Groups        []GroupDetail
+	AdminUsers    []AdminUser
+	AdminRoles    []DiscordRole
+}
+
+// SetStateForTest replaces cached SSO client state (tests only).
+func (c *Client) SetStateForTest(st TestClientState) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.connected = st.Connected
+	c.isAdmin = st.Admin
+	c.userID = st.UserID
+	c.state = FullState{
+		Accounts: append([]AccountMeta(nil), st.Accounts...),
+		Online:   []OnlineEntry{},
+	}
+	c.shareAct = st.ShareActivity
+	if c.shareAct.Logins == nil {
+		c.shareAct.Logins = []ShareLoginEntry{}
+	}
+	if c.shareAct.Online == nil {
+		c.shareAct.Online = []ShareOnlineEntry{}
+	}
+	if st.Directory != nil {
+		c.directory = append([]DirectoryUser(nil), st.Directory...)
+	} else {
+		c.directory = []DirectoryUser{}
+	}
+	if st.Groups != nil {
+		c.groups = append([]GroupDetail(nil), st.Groups...)
+	} else {
+		c.groups = []GroupDetail{}
+	}
+	if st.Admin {
+		c.admin = AdminState{
+			Users: append([]AdminUser(nil), st.AdminUsers...),
+			Roles: append([]DiscordRole(nil), st.AdminRoles...),
+		}
+	} else {
+		c.admin = AdminState{}
+	}
+}
+
 func (c *Client) Connected() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()

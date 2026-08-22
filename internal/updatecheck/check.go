@@ -19,6 +19,13 @@ type Result struct {
 // Overridable for tests.
 var githubAPIBase = "https://api.github.com"
 
+// SetAPIBaseForTest overrides the GitHub API base URL for tests. Returns a restore func.
+func SetAPIBaseForTest(base string) func() {
+	old := githubAPIBase
+	githubAPIBase = base
+	return func() { githubAPIBase = old }
+}
+
 // Check compares current version to the latest GitHub Release tag for owner/repo.
 func Check(ctx context.Context, ownerRepo, current string) (Result, error) {
 	parts := strings.Split(ownerRepo, "/")
