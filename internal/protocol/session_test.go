@@ -72,6 +72,29 @@ func TestProxySessionBuildClientOutboundFragmentsLargePayload(t *testing.T) {
 	}
 }
 
+func TestProxySessionAdjustAckUsesSeqFromServer(t *testing.T) {
+	buf := []byte{0x00, OpAck, 0x00, 0x99}
+	var sess ProxySessionState
+	sess.SeqFromServer = 5
+	sess.AdjustAck(buf, 0)
+	if GetSequence(buf, 0) != 4 {
+		t.Fatalf("ack seq=%d", GetSequence(buf, 0))
+	}
+}
+
+func TestProxySessionRecvPacketRewritesSeq(t *testing.T) {
+	buf := []byte{0x00, OpPacket, 0x00, 0x08, 0x01}
+	var sess ProxySessionState
+	sess.SeqFromServer = 8
+	sess.RecvPacket(buf, 0)
+	if GetSequence(buf, 0) != 0 {
+		t.Fatalf("client seq=%d", GetSequence(buf, 0))
+	}
+	if sess.SeqToClient != 1 || sess.SeqFromServer != 9 {
+		t.Fatalf("to_client=%d from_server=%d", sess.SeqToClient, sess.SeqFromServer)
+	}
+}
+
 func TestProxySessionRecvFragmentIgnoresNonServerListOpcode(t *testing.T) {
 	app := append([]byte{0x02, 0x00}, []byte("not-server-list")...)
 	frags := BuildFragments(app, 1, 64)

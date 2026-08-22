@@ -9,6 +9,16 @@ import (
 	"testing"
 )
 
+func TestAppOpcode(t *testing.T) {
+	if AppOpcode(nil) != 0 || AppOpcode([]byte{0x18}) != 0 {
+		t.Fatal("short payload")
+	}
+	app := []byte{0x18, 0x00, 0x01, 0x02}
+	if AppOpcode(app) != AppServerListResponse {
+		t.Fatalf("opcode=%x", AppOpcode(app))
+	}
+}
+
 func TestReassembleCapturedServerListFragments(t *testing.T) {
 	fragPath := filepath.Join("testdata", "server_list_fragments.hexlist")
 	assembledPath := filepath.Join("testdata", "server_list_assembled.hex")

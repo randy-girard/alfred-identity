@@ -57,4 +57,29 @@ func TestParseLoginPacketRejectsBadPrefix(t *testing.T) {
 	if _, ok := ParseLoginPacket([]byte{0x00, 0x03, 0x05, 0x00, 0x15}); ok {
 		t.Fatal("expected reject")
 	}
+	if _, ok := ParseLoginPacket([]byte{0x00, 0x03, 0x04, 0x00, 0x15, 0x00, 0x00, 0x05}); ok {
+		t.Fatal("truncated login")
+	}
+}
+
+func TestSpliceEncryptedCredentialsTooLarge(t *testing.T) {
+	base := []byte{
+		0x00, 0x03,
+		0x04, 0x00, 0x15, 0x00, 0x00,
+		0x20, 0x00, 0x09, 0x00, 0x01,
+		0x02, 0x00,
+		0x03, 0x00, 0x00, 0x00,
+		0x00,
+		0x02,
+		0x00, 0x00, 0x00, 0x00,
+	}
+	base = append(base, GoldenBytes()...)
+	lp, ok := ParseLoginPacket(base)
+	if !ok {
+		t.Fatal("parse")
+	}
+	big := make([]byte, 300)
+	if _, err := lp.SpliceEncryptedCredentials(big); err == nil {
+		t.Fatal("expected too large")
+	}
 }

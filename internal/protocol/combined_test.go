@@ -2,6 +2,16 @@ package protocol
 
 import "testing"
 
+func TestParseCombinedTruncated(t *testing.T) {
+	if _, ok := ParseCombined([]byte{0x00}, 0, -1); ok {
+		t.Fatal("too short for opcode")
+	}
+	full := []byte{0x00, OpCombined, 0x04, 0x00, OpAck, 0x00, 0x01}
+	if _, ok := ParseCombined(full, 0, 1); ok {
+		t.Fatal("length bound too short")
+	}
+}
+
 func TestParseCombinedAckAndPacket(t *testing.T) {
 	// Combined: op(2) + ack sublen(1)+ack(4) + packet sublen(1)+packet(4+payload)
 	pkt := []byte{
