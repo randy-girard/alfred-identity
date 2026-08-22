@@ -7,3 +7,5 @@ Golden: `user`/`pass` → `575ab3e46810e874f75cb31595902052`
 Login splice follows **p99-login-proxy** `LoginPacket` layout (Ack + Login subpacket). See `internal/protocol/login_packet.go`.
 
 The UDP proxy strips/restores SOE CRC after session negotiation and rewrites transport sequences like p99-login-proxy (`internal/protocol/session.go`, `internal/proxy/engine.go`).
+
+Server lists arrive as SOE **Fragment** datagrams; the proxy reassembles them and forwards the payload to the client as Packet(s), matching p99-login-proxy passthrough behavior.

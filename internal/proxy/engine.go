@@ -17,6 +17,7 @@ type Engine struct {
 
 	crcBytes byte
 	crcKey   uint32
+	maxPacket uint32
 	client   *net.UDPAddr
 }
 
@@ -90,6 +91,8 @@ func (e *Engine) handleClient(ctx context.Context, data []byte) Actions {
 		e.Session.AdjustAck(outbound, 0)
 	case protocol.OpPacket:
 		e.Session.AdjustClientPacket(outbound, 0)
+	case protocol.OpFragment:
+		e.Session.AdjustClientPacket(outbound, 0)
 	}
 
 	if len(outbound) > 0 {
@@ -110,13 +113,18 @@ func (e *Engine) handleServer(ctx context.Context, data []byte) Actions {
 		if resp, ok := protocol.ParseSessionResponse(data); ok {
 			e.crcBytes = resp.CRCBytes
 			e.crcKey = resp.EncodeKey
+			e.maxPacket = resp.MaxPacketSize
 			e.Session.Reset()
 			if e.Log != nil {
 				e.Log.Info("login server session parameters",
-					"crc_bytes", resp.CRCBytes, "crc_key", resp.EncodeKey)
+					"crc_bytes", resp.CRCBytes, "crc_key", resp.EncodeKey,
+					"max_packet", resp.MaxPacketSize)
 			}
 		}
 		actions.SendClient = append(actions.SendClient, append([]byte{}, data...))
+	case protocol.OpFragment:
+		out := e.Session.RecvFragment(append([]byte{}, data...), int(e.maxPacket))
+		actions.SendClient = append(actions.SendClient, out...)
 	case protocol.OpCombined:
 		buf := append([]byte{}, data...)
 		forward := e.Session.RecvCombined(buf, 0, len(buf))
