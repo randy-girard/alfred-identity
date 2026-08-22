@@ -248,11 +248,11 @@ func (c *Client) OnlineAccountIDs() map[int64]bool {
 	return m
 }
 
-func (c *Client) Connect(parent context.Context, wsURL, token, clientVersion string) error {
-	c.Disconnect()
+// normalizeDialURL remaps http(s)→ws(s) and rejects remote plain ws://.
+func normalizeDialURL(wsURL string) (*url.URL, error) {
 	u, err := url.Parse(wsURL)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	switch u.Scheme {
 	case "http":
@@ -263,8 +263,17 @@ func (c *Client) Connect(parent context.Context, wsURL, token, clientVersion str
 	host := u.Hostname()
 	if u.Scheme == "ws" && host != "127.0.0.1" && host != "localhost" && !strings.EqualFold(host, "localhost") {
 		if host != "::1" {
-			return fmt.Errorf("remote sources require wss://")
+			return nil, fmt.Errorf("remote sources require wss://")
 		}
+	}
+	return u, nil
+}
+
+func (c *Client) Connect(parent context.Context, wsURL, token, clientVersion string) error {
+	c.Disconnect()
+	u, err := normalizeDialURL(wsURL)
+	if err != nil {
+		return err
 	}
 
 	ctx, cancel := context.WithCancel(parent)
