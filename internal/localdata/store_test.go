@@ -136,3 +136,42 @@ func TestLoadLegacyCharactersHeader(t *testing.T) {
 		t.Fatalf("%#v", s.Characters)
 	}
 }
+
+func TestUpsertCharacterUpdate(t *testing.T) {
+	dir := t.TempDir()
+	s := &Store{
+		AccountsPath:   filepath.Join(dir, "a.csv"),
+		CharactersPath: filepath.Join(dir, "c.csv"),
+	}
+	if err := s.UpsertCharacter("acc1", "Hero"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpsertCharacter("acc2", "Hero"); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Characters) != 1 || s.Characters[0].Account != "acc2" {
+		t.Fatalf("%#v", s.Characters)
+	}
+	if err := s.UpsertCharacter("", "Hero"); err == nil {
+		t.Fatal("expected account required")
+	}
+}
+
+func TestDeleteAccountMissingAndExportEmpty(t *testing.T) {
+	dir := t.TempDir()
+	s := &Store{
+		AccountsPath:   filepath.Join(dir, "a.csv"),
+		CharactersPath: filepath.Join(dir, "c.csv"),
+	}
+	if err := s.DeleteAccount("nope"); err == nil {
+		t.Fatal("expected not found")
+	}
+	if _, err := s.ExportAccountsCSV(""); err == nil {
+		t.Fatal("path required")
+	}
+	out := filepath.Join(dir, "empty.csv")
+	n, err := s.ExportAccountsCSV(out)
+	if err != nil || n != 0 {
+		t.Fatalf("n=%d err=%v", n, err)
+	}
+}
