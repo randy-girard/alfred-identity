@@ -40,7 +40,7 @@ func (a *FragmentAssembler) Add(seq uint16, rawFrag []byte) ([]byte, bool) {
 	startsNew := false
 	if a.firstSeq != nil {
 		first := *a.firstSeq
-		if seq != first && seq-first > 0x8000 {
+		if seq != first && seq-first > 0x8000 { // wrapping_sub > u16::MAX/2
 			startsNew = true
 		}
 	}

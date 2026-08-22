@@ -124,6 +124,9 @@ func (e *Engine) handleServer(ctx context.Context, data []byte) Actions {
 		actions.SendClient = append(actions.SendClient, append([]byte{}, data...))
 	case protocol.OpFragment:
 		out := e.Session.RecvFragment(append([]byte{}, data...), int(e.maxPacket))
+		if len(out) > 0 && e.Log != nil {
+			e.Log.Info("server list forwarded to client", "packets", len(out))
+		}
 		actions.SendClient = append(actions.SendClient, out...)
 	case protocol.OpCombined:
 		buf := append([]byte{}, data...)

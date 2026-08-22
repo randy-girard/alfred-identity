@@ -4,10 +4,12 @@ import "encoding/binary"
 
 // ProxySessionState tracks SOE sequence numbers between client and upstream (p99-login-proxy).
 type ProxySessionState struct {
-	SeqToClient   uint32
-	SeqFromServer uint32
-	CSOffset      uint32
-	fragments     FragmentAssembler
+	SeqToClient         uint32
+	SeqFromServer       uint32
+	CSOffset            uint32
+	fragments           FragmentAssembler
+	pendingAppOpcode    *uint16
+	serverListForwarded bool
 }
 
 func (s *ProxySessionState) Reset() {
@@ -15,6 +17,8 @@ func (s *ProxySessionState) Reset() {
 	s.SeqFromServer = 0
 	s.CSOffset = 0
 	s.fragments.Reset()
+	s.pendingAppOpcode = nil
+	s.serverListForwarded = false
 }
 
 func (s *ProxySessionState) AdjustCombined(buf []byte) {
@@ -87,14 +91,40 @@ func (s *ProxySessionState) RecvFragment(raw []byte, maxPacket int) [][]byte {
 		return nil
 	}
 	serverSeq := GetSequence(raw, 0)
-	if uint32(serverSeq)+1 > s.SeqFromServer {
-		s.SeqFromServer = uint32(serverSeq) + 1
+	s.SeqFromServer = uint32(serverSeq) + 1
+
+	if !s.fragments.IsActive() && len(raw) >= 10 {
+		op := binary.LittleEndian.Uint16(raw[8:10])
+		s.pendingAppOpcode = &op
 	}
+
 	app, ok := s.fragments.Add(serverSeq, raw)
 	if !ok || app == nil {
 		return nil
 	}
-	return s.buildClientOutbound(app, maxPacket)
+	appOpcode := s.pendingAppOpcode
+	s.pendingAppOpcode = nil
+	if appOpcode == nil || *appOpcode != AppServerListResponse {
+		return nil
+	}
+	if s.serverListForwarded {
+		return nil
+	}
+	out := s.buildFilteredServerList(app, maxPacket)
+	if len(out) > 0 {
+		s.serverListForwarded = true
+	}
+	return out
+}
+
+func (s *ProxySessionState) buildFilteredServerList(app []byte, maxPacket int) [][]byte {
+	servers, header, ok := ParseServerList(app)
+	if !ok {
+		return nil
+	}
+	filtered := FilterP99Servers(servers)
+	rebuilt := BuildServerListResponse(filtered, header)
+	return s.buildClientOutbound(rebuilt, maxPacket)
 }
 
 func (s *ProxySessionState) buildClientOutbound(app []byte, maxPacket int) [][]byte {

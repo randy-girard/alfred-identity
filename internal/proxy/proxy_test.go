@@ -129,6 +129,10 @@ func TestIsUpstreamPeer(t *testing.T) {
 	if !isUpstreamPeer(peer, up) {
 		t.Fatal("expected upstream peer match")
 	}
+	mapped := &net.UDPAddr{IP: net.ParseIP("::ffff:1.2.3.4"), Port: 5998}
+	if !isUpstreamPeer(mapped, up) {
+		t.Fatal("expected ipv4-mapped upstream peer match")
+	}
 	other := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 12345}
 	if isUpstreamPeer(other, up) {
 		t.Fatal("expected client peer mismatch")

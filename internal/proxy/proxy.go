@@ -119,5 +119,16 @@ func isUpstreamPeer(peer, upstream *net.UDPAddr) bool {
 	if peer == nil || upstream == nil {
 		return false
 	}
-	return peer.IP.Equal(upstream.IP) && peer.Port == upstream.Port
+	return normalizeAddr(peer).IP.Equal(normalizeAddr(upstream).IP) &&
+		normalizeAddr(peer).Port == normalizeAddr(upstream).Port
+}
+
+func normalizeAddr(addr *net.UDPAddr) *net.UDPAddr {
+	if addr == nil {
+		return nil
+	}
+	if ip4 := addr.IP.To4(); ip4 != nil {
+		return &net.UDPAddr{IP: ip4, Port: addr.Port, Zone: addr.Zone}
+	}
+	return addr
 }
