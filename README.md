@@ -1,26 +1,39 @@
-# alfred-identity
+# Alfred Identity
 
-Native desktop GUI (Wails v2) — local UDP login proxy and SSO client for **alfred-identity-backend**.
+Native desktop GUI ([Wails v2](https://wails.io)) — local UDP login proxy and SSO client for **[alfred-identity-backend](https://github.com/randy-girard/alfred-identity-backend)**.
+
+The app runs in the **menu bar** (macOS) or **system tray** (Windows/Linux). Closing the window hides it; the proxy and SSO connection keep running until you quit.
 
 ## Requirements
 
-- Go (see `go.mod`)
-- [Wails v2](https://wails.io) CLI (`go install github.com/wailsapp/wails/v2/cmd/wails@latest`)
-- Node.js (for the frontend)
+- Go 1.26+ (see `go.mod`)
+- [Wails v2](https://wails.io) CLI: `go install github.com/wailsapp/wails/v2/cmd/wails@latest`
+- Node.js (frontend build)
 
 ## Project layout
 
 ```
-main.go              # Wails entrypoint
+main.go                 # Wails entrypoint
 wails.json
-frontend/            # React UI
+frontend/               # React UI
 internal/
-  app/               # Wails backend, tray, instance lock, tests
-  eqhost/ …          # login proxy, protocol, SSO client, etc.
-scripts/             # dev.sh, build.sh, test.sh
-docs/
-build/               # Wails platform packaging assets
+  app/                  # Wails backend, tray, instance lock
+  eqhost/               # eqhost.txt read/write/backup
+  eqpath/               # EverQuest install path helpers
+  localdata/            # Local accounts CSV store
+  logbuf/ logwatch/     # In-app log buffer; EQ log tailing
+  p99proxy/             # P99 Login Proxy install discovery/import
+  protocol/ proxy/      # SOE login protocol; UDP relay
+  router/               # Login packet routing (local / SSO / busy)
+  sources/              # config.json + SSO source list
+  sso/                  # WebSocket SSO client
+  updatecheck/          # GitHub release checks
+scripts/                # dev.sh, build.sh, test.sh, version helpers
+docs/                   # ws-api.md, protocol.md
+build/                  # Wails platform packaging assets
 ```
+
+Unit tests live next to each package under `internal/` (co-located `*_test.go` files).
 
 ## Develop
 
@@ -37,39 +50,103 @@ cd alfred-identity
 # → build/bin/Alfred Identity.app (macOS) or equivalent
 ```
 
-`scripts/dev.sh` and `scripts/build.sh` stamp `app.Version` at link time from git (`dev-<short>` plus `+dirty` when needed). Release CI overrides with semver (`1.2.0`) from the release tag.
+`scripts/dev.sh` and `scripts/build.sh` stamp `app.Version` at link time from git (`dev-<short>`, plus `+dirty` when needed). Release CI overrides with semver from the release tag.
 
 ## Tests and coverage
 
 ```bash
-make test          # unit tests under ./internal (race detector)
+make test          # go test ./... with race detector
 make coverage      # writes coverage/index.html (+ source.html, func.txt)
 ```
 
-Open `coverage/index.html` in a browser. Or from the repo root: `make test` / `make coverage`.
+Open `coverage/index.html` in a browser.
 
-## Window / tray
+---
 
-The app lives in the **menu bar** (macOS: **AI** status item) or **system tray** (Windows/Linux). Closing the window hides it; proxy and SSO keep running.
+## Help — using the app
 
-- **macOS:** Dock icon only while the window is open; menu-bar **AI** item stays available
-- **Windows/Linux:** Taskbar entry while the window is open; tray icon always available
-- Reopen: status/tray item → **Show Window** (or click the Dock icon / reopen the app)
-- Quit: status/tray item → **Exit** (macOS app menu Quit also works)
+### Open, hide, and quit
 
-## First-time setup (with local daemon)
+| Platform | Where the app lives | Reopen window | Quit |
+|----------|---------------------|---------------|------|
+| **macOS** | Menu bar **AI** item; Dock icon only while window is open | **AI** → **Show Window**, or click Dock icon | **AI** → **Exit**, or app menu **Quit** |
+| **Windows / Linux** | System tray icon; taskbar while window is open | Tray → **Show Window** | Tray → **Exit** |
 
-1. Start **alfred-identity-backend** (from `../alfred-identity-backend`): `docker compose up --build`
-2. Create an SSO token in Discord (`/alfred-identity-sso create`) or with `go run ./cmd/seedtoken …` when Discord is disabled
-3. Open **Alfred Identity** → **Connections** → paste `http://127.0.0.1:8181` (or `…/sso-source.json`) → **Add from URL**, paste your token, then set mode to **Login w/ SSO**
-4. **EverQuest**: pick the install directory (log presence + `eqhost.txt`)
-5. Point EQ login at the proxy (or let the app rewrite `eqhost.txt`), then restart EverQuest
+**Check for updates** is also on the menu bar / tray menu (macOS: **AI** → **Check for Updates**).
 
-## Config (SSO sources)
+### First-time setup
 
-Stored under the OS user config dir: `…/alfred-identity/config.json` (migrated automatically from `alfred-identity-gui`).
+1. **Start the backend** (guild daemon), e.g. from `alfred-identity-backend`: `docker compose up --build`
+2. **Create an SSO token** in Discord (`/alfred-identity-sso create`) or with `go run ./cmd/seedtoken …` when Discord is disabled
+3. **Add an SSO source** in Alfred Identity → **Connections** → paste the JSON from `/alfred-identity-sso get` → **Add from JSON** (or **Manage sources…** → **Add manually**)
+4. Set **Connection mode** to **Login w/ SSO**
+5. **EverQuest** tab → **Browse…** → pick your install folder → **Save path**
+6. When the proxy starts, the app can rewrite `eqhost.txt` to point at the local listener — **restart EverQuest** after eqhost changes
 
-Add sources in the UI (**Connections** → **Add from URL** using the guild’s `{origin}/sso-source.json`), or edit `sources` in the config file. Use **host** only (`host:port`); the app builds `ws(s)://{host}/ws/sso` when connecting (plain `ws` for localhost/LAN, `wss` for public hosts):
+### Connection modes
+
+Set on **Connections** (or the status bar at the bottom):
+
+| Mode | Proxy | SSO | Use when |
+|------|-------|-----|----------|
+| **Login w/ SSO** | On | On | Guild accounts via daemon; local accounts still work |
+| **Login Only** | On | Off | Local CSV accounts only; no guild SSO |
+| **Disabled** | Off | Off | Not proxying logins |
+
+**Listen port** (default **6998**, `127.0.0.1` only) is on **Settings** → **UDP proxy**. Changing it while the proxy is running restarts the listener.
+
+### SSO sources
+
+- Stored in `config.json` under your OS user config dir (see [Config files](#config-files))
+- **Connections** lists sources; click **Use this source** to activate one
+- Only the **active** source is connected when mode is **Login w/ SSO**
+- Host is `host:port` only — the app builds `ws://` or `wss://` + `/ws/sso` when connecting (`ws` for localhost/LAN, `wss` for public hosts)
+
+### Accounts tab
+
+| Sub-tab | Purpose |
+|---------|---------|
+| **SSO** | Read-only roster from the active daemon (aliases, tags, characters, who is logged in). Manage accounts in the [web admin](../alfred-identity-backend/README.md). |
+| **Local** | Personal accounts on this machine (CSV). Checked **before** SSO when the typed login name matches. **Add account**, **Import CSV…**, **Export CSV…**, or import from a **P99 Login Proxy** install. |
+| **Shared** | (When SSO connected) Outgoing shares you granted and accounts others shared with you |
+
+**Login behavior:** type an account name, alias, tag, or character name at the EverQuest login screen. Local names win over SSO. Tags cycle shared guild accounts; aliases belong to one account.
+
+**Share** (Local tab): with SSO connected, copy a local account to selected Discord users as a private SSO share without giving up your local copy.
+
+### EverQuest tab
+
+- **Install directory** — used for log watching (online character count in the status bar) and `eqhost.txt`
+- **eqhost.txt** — view, edit, save; first save creates `eqhost.txt.bak`; **Restore backup** rolls back
+- **Online (from logs)** — characters seen recently in `eqlog_*.txt` files
+
+### Logs tab
+
+In-app log of proxy, SSO, eqhost, and backend activity. **Auto-scroll** and **Clear** are available while the tab is open.
+
+### Settings tab
+
+- **Appearance** — light / dark theme (saved in browser local storage on this machine)
+- **UDP proxy** — listen port
+- **Updates** — current version, **Check for updates**, link to GitHub release when newer
+
+### Status bar
+
+Shown at the bottom on every tab: **Mode**, **Proxy**, **SSO**, **EQ path**, **Online** count. Mode can be changed from the bar without opening **Connections**.
+
+---
+
+## Config files
+
+Stored under the OS user config directory in **`alfred-identity/`** (migrated automatically from legacy `alfred-identity-gui` or `p99-identity-gui`):
+
+| File | Purpose |
+|------|---------|
+| `config.json` | SSO sources, active source, connection mode, listen address, EQ directory, GitHub repo for updates |
+| `accounts.csv` | Local account names/passwords/aliases |
+| `characters.csv` | Local character → account mappings |
+
+Example `config.json` fragment:
 
 ```json
 {
@@ -83,28 +160,28 @@ Add sources in the UI (**Connections** → **Add from URL** using the guild’s 
     }
   ],
   "listen_addr": "127.0.0.1:6998",
-  "connection_mode": "disabled"
+  "connection_mode": "login_sso"
 }
 ```
 
-`connection_mode`: `login_sso` (proxy + SSO), `login_only` (proxy without SSO), or `disabled`.
+`connection_mode`: `login_sso`, `login_only`, or `disabled`.
 
-Only the **active** source is connected. Use **Activate** on the Connections tab to switch.
+---
 
-## Tabs
+## UI tabs (quick reference)
 
 | Tab | Purpose |
 |-----|---------|
-| Connections | Listen port, enable/disable proxy, SSO source list (activate) |
-| Accounts | Sub-tabs: **SSO** roster from the active daemon; **Local** personal accounts and aliases |
-| EverQuest | Install path (Browse…), online characters from logs |
+| **Connections** | Connection mode, SSO source list, add/import sources |
+| **Accounts** | SSO roster, local accounts, sharing |
+| **EverQuest** | Install path, `eqhost.txt`, online characters from logs |
+| **Logs** | Application log viewer |
+| **Settings** | Theme, listen port, update check |
 
-A status bar at the bottom of every tab shows proxy, SSO, EQ path, and online count (updates automatically).
-
-Local personal accounts CSV paths are also under that config directory by default.
+---
 
 ## Docs
 
 - [docs/ws-api.md](docs/ws-api.md) — WebSocket contract (same as daemon)
 - [docs/protocol.md](docs/protocol.md) — login packet / DES notes
-- [../alfred-identity-backend/README.md](../alfred-identity-backend/README.md) — alfred-identity-backend (Compose + Discord)
+- [alfred-identity-backend README](../alfred-identity-backend/README.md) — daemon, Compose, Discord bot, web admin

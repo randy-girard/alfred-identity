@@ -1,0 +1,34 @@
+---
+description: Keep README.md accurate when changing user-visible GUI behavior
+globs: frontend/**/*,internal/app/**/*,wails.json,scripts/dev.sh,scripts/build.sh
+alwaysApply: false
+---
+
+# README sync (Alfred Identity GUI)
+
+When you change user-visible behavior, UI tabs, config paths, build/dev workflow, or project layout, update **README.md** in the same change (or immediately after).
+
+## What to keep in sync
+
+- **Help section** — how to use tabs, connection modes, SSO sources, accounts, EverQuest/eqhost, tray/menu bar, updates
+- **Project layout** — `internal/` packages and top-level folders
+- **Config paths** — `alfred-identity/` under the OS user config dir; CSV filenames
+- **Develop / build / test** commands — must match `Makefile` and `scripts/`
+- **Tab list** — must match `TABS` in `frontend/src/App.jsx`
+
+## Sources of truth
+
+| Topic | Check |
+|-------|--------|
+| UI tabs & labels | `frontend/src/App.jsx` (`TABS`, connection modes, modals) |
+| Config dir name | `internal/app/name.go` (`ConfigDirName`) |
+| Connection modes | `internal/sources/sources.go` |
+| Tray / menu actions | `internal/app/tray_*.go` |
+| Version / build | `scripts/dev.sh`, `scripts/build.sh`, `.github/workflows/` |
+
+## Do not
+
+- Document features that exist only in the backend repo — link to `alfred-identity-backend` instead
+- Leave stale tab names (e.g. listen port moved from Connections to Settings)
+
+Keep README prose concise; prefer tables for tab/mode reference and a dedicated **Help** section for end-user steps.
