@@ -72,7 +72,7 @@ func Check(ctx context.Context, ownerRepo, current string) (Result, error) {
 	latest := strings.TrimPrefix(body.TagName, "v")
 	cur := strings.TrimPrefix(current, "v")
 	out := Result{
-		UpdateAvailable: latest != "" && latest != cur,
+		UpdateAvailable: IsNewer(latest, cur),
 		Current:         current,
 		Latest:          body.TagName,
 		ReleaseURL:      body.HTMLURL,

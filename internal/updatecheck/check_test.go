@@ -43,6 +43,15 @@ func TestCheckWithServer(t *testing.T) {
 	if res.UpdateAvailable {
 		t.Fatalf("should be up to date: %+v", res)
 	}
+
+	// Current newer than GitHub "latest" must not offer a downgrade.
+	res, err = Check(context.Background(), "acme/app", "2.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.UpdateAvailable || res.CanApply {
+		t.Fatalf("should not offer downgrade: %+v", res)
+	}
 }
 
 func TestCheckNotFound(t *testing.T) {
