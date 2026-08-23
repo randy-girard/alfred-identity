@@ -246,7 +246,7 @@ func TestShareLocalAccountRoundTrip(t *testing.T) {
 	if err := a.SaveLocalAccount("tank", "secret", nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.ShareLocalAccount("tank", []int64{2}); err != nil {
+	if err := a.ShareLocalAccount("tank", []int64{2}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 }

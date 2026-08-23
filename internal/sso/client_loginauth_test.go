@@ -610,7 +610,7 @@ func TestShareAccountRoundTrip(t *testing.T) {
 	defer c.Disconnect()
 	waitForSSOState(t, c, false)
 
-	res, err := c.ShareAccount(ctx, "box", "pw", nil, nil)
+	res, err := c.ShareAccount(ctx, "box", "pw", nil, nil, nil, nil)
 	if err != nil || !res.OK || res.AccountID != 5 {
 		t.Fatalf("res=%+v err=%v", res, err)
 	}

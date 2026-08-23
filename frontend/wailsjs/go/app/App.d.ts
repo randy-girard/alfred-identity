@@ -104,7 +104,7 @@ export function SetListenPort(arg1:number):Promise<void>;
 
 export function SetProxyEnabled(arg1:boolean):Promise<void>;
 
-export function ShareLocalAccount(arg1:string,arg2:Array<number>):Promise<void>;
+export function ShareLocalAccount(arg1:string,arg2:Array<number>,arg3:Array<string>,arg4:Array<number>):Promise<void>;
 
 export function StartProxy():Promise<void>;
 

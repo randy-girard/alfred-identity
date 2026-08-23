@@ -17,19 +17,20 @@ import (
 const ProtocolVersion = 1
 
 type AccountMeta struct {
-	ID             int64    `json:"id"`
-	Username       string   `json:"username"`
-	Disabled       bool     `json:"disabled"`
-	Elevated       bool     `json:"elevated"`
-	RequiredRoleID string   `json:"required_role_id"`
-	RequiredUserID int64    `json:"required_user_id"`
-	GroupIDs       []int64  `json:"group_ids"`
-	Restricted     bool     `json:"restricted"`
-	OwnerUserID    int64    `json:"owner_user_id"`
-	SharedUserIDs  []int64  `json:"shared_user_ids"`
-	Aliases        []string `json:"aliases"`
-	Tags           []string `json:"tags"`
-	Characters     []string `json:"characters"`
+	ID              int64    `json:"id"`
+	Username        string   `json:"username"`
+	Disabled        bool     `json:"disabled"`
+	Elevated        bool     `json:"elevated"`
+	RequiredRoleID  string   `json:"required_role_id"`
+	RequiredRoleIDs []string `json:"required_role_ids"`
+	RequiredUserID  int64    `json:"required_user_id"`
+	GroupIDs        []int64  `json:"group_ids"`
+	Restricted      bool     `json:"restricted"`
+	OwnerUserID     int64    `json:"owner_user_id"`
+	SharedUserIDs   []int64  `json:"shared_user_ids"`
+	Aliases         []string `json:"aliases"`
+	Tags            []string `json:"tags"`
+	Characters      []string `json:"characters"`
 }
 
 type OnlineEntry struct {
@@ -133,6 +134,7 @@ type Client struct {
 	admin       AdminState
 	directory   []DirectoryUser
 	groups      []GroupDetail
+	roles       []DiscordRole
 	shareAct    ShareActivity
 	userID      int64
 	discordID   string
@@ -161,6 +163,7 @@ type TestClientState struct {
 	ShareActivity ShareActivity
 	Directory     []DirectoryUser
 	Groups        []GroupDetail
+	Roles         []DiscordRole
 	AdminUsers    []AdminUser
 	AdminRoles    []DiscordRole
 }
@@ -192,6 +195,11 @@ func (c *Client) SetStateForTest(st TestClientState) {
 		c.groups = append([]GroupDetail(nil), st.Groups...)
 	} else {
 		c.groups = []GroupDetail{}
+	}
+	if st.Roles != nil {
+		c.roles = append([]DiscordRole(nil), st.Roles...)
+	} else {
+		c.roles = []DiscordRole{}
 	}
 	if st.Admin {
 		c.admin = AdminState{
@@ -234,6 +242,14 @@ func (c *Client) Groups() []GroupDetail {
 	defer c.mu.Unlock()
 	out := make([]GroupDetail, len(c.groups))
 	copy(out, c.groups)
+	return out
+}
+
+func (c *Client) Roles() []DiscordRole {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]DiscordRole, len(c.roles))
+	copy(out, c.roles)
 	return out
 }
 
@@ -345,6 +361,7 @@ func (c *Client) Connect(parent context.Context, wsURL, token, clientVersion str
 	c.admin = AdminState{}
 	c.directory = nil
 	c.groups = nil
+	c.roles = nil
 	c.userID = 0
 	c.discordID = ""
 	c.displayName = ""
@@ -393,6 +410,7 @@ func (c *Client) readLoop(ctx context.Context) {
 				Admin         AdminState      `json:"admin"`
 				Directory     []DirectoryUser `json:"directory"`
 				Groups        []GroupDetail   `json:"groups"`
+				Roles         []DiscordRole   `json:"roles"`
 				ShareActivity ShareActivity   `json:"share_activity"`
 				UserID        int64           `json:"user_id"`
 				DiscordID     string          `json:"discord_id"`
@@ -414,6 +432,11 @@ func (c *Client) readLoop(ctx context.Context) {
 					c.groups = msg.Groups
 				} else {
 					c.groups = []GroupDetail{}
+				}
+				if msg.Roles != nil {
+					c.roles = msg.Roles
+				} else {
+					c.roles = []DiscordRole{}
 				}
 				c.shareAct = msg.ShareActivity
 				if c.shareAct.Logins == nil {
@@ -506,6 +529,7 @@ func (c *Client) Disconnect() {
 	c.shareAct = ShareActivity{}
 	c.directory = nil
 	c.groups = nil
+	c.roles = nil
 	c.mu.Unlock()
 }
 
@@ -755,16 +779,23 @@ func (c *Client) Heartbeat(ctx context.Context, character string, offline bool) 
 	return conn.Write(ctx, websocket.MessageText, msg)
 }
 
-func (c *Client) ShareAccount(ctx context.Context, username, password string, aliases []string, userIDs []int64) (AdminResult, error) {
+func (c *Client) ShareAccount(ctx context.Context, username, password string, aliases []string, userIDs []int64, roleIDs []string, groupIDs []int64) (AdminResult, error) {
 	if userIDs == nil {
 		userIDs = []int64{}
+	}
+	if roleIDs == nil {
+		roleIDs = []string{}
+	}
+	if groupIDs == nil {
+		groupIDs = []int64{}
 	}
 	if aliases == nil {
 		aliases = []string{}
 	}
 	return c.requestRPC(ctx, map[string]any{
 		"type": "share_account", "request_id": uuid.NewString(),
-		"username": username, "password": password, "aliases": aliases, "user_ids": userIDs,
+		"username": username, "password": password, "aliases": aliases,
+		"user_ids": userIDs, "role_ids": roleIDs, "group_ids": groupIDs,
 	})
 }
 

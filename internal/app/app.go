@@ -365,6 +365,7 @@ type StatusDTO struct {
 	SSOOnline       []sso.OnlineEntry    `json:"sso_online"`
 	SSODirectory    []sso.DirectoryUser  `json:"sso_directory"`
 	SSOGroups       []sso.GroupDetail    `json:"sso_groups"`
+	SSORoles        []sso.DiscordRole    `json:"sso_roles"`
 	SSOAdminUsers   []sso.AdminUser      `json:"sso_admin_users"`
 	SSOAdminRoles   []sso.DiscordRole    `json:"sso_admin_roles"`
 	ShareActivity   sso.ShareActivity    `json:"share_activity"`
@@ -434,11 +435,13 @@ func (a *App) GetStatus() StatusDTO {
 	var adminRoles []sso.DiscordRole
 	var directory []sso.DirectoryUser
 	var groups []sso.GroupDetail
+	var roles []sso.DiscordRole
 	var shareAct sso.ShareActivity
 	var userID int64
 	if connected {
 		directory = a.sso.Directory()
 		groups = a.sso.Groups()
+		roles = a.sso.Roles()
 		shareAct = a.sso.ShareActivity()
 		userID = a.sso.UserID()
 	}
@@ -468,6 +471,7 @@ func (a *App) GetStatus() StatusDTO {
 		SSOOnline:      st.Online,
 		SSODirectory:   directory,
 		SSOGroups:      groups,
+		SSORoles:       roles,
 		SSOAdminUsers:  adminUsers,
 		SSOAdminRoles:  adminRoles,
 		ShareActivity:  shareAct,
@@ -476,13 +480,15 @@ func (a *App) GetStatus() StatusDTO {
 }
 
 type LocalAccountDTO struct {
-	Name           string   `json:"name"`
-	Password       string   `json:"password"`
-	Aliases        []string `json:"aliases"`
-	HasPass        bool     `json:"has_password"`
-	Shared         bool     `json:"shared"`
-	SharedUserIDs  []int64  `json:"shared_user_ids"`
-	SharedSSOAcct  int64    `json:"shared_sso_account_id"`
+	Name            string   `json:"name"`
+	Password        string   `json:"password"`
+	Aliases         []string `json:"aliases"`
+	HasPass         bool     `json:"has_password"`
+	Shared          bool     `json:"shared"`
+	SharedUserIDs   []int64  `json:"shared_user_ids"`
+	SharedRoleIDs   []string `json:"shared_role_ids"`
+	SharedGroupIDs  []int64  `json:"shared_group_ids"`
+	SharedSSOAcct   int64    `json:"shared_sso_account_id"`
 	InUse          bool     `json:"in_use"`
 	InUseBy        string   `json:"in_use_by,omitempty"`
 	InUseOther     bool     `json:"in_use_other"`
@@ -546,12 +552,20 @@ func (a *App) GetLocalAccounts() []LocalAccountDTO {
 		})
 		dto := LocalAccountDTO{
 			Name: acc.Name, Password: acc.Password, Aliases: aliases, HasPass: acc.Password != "",
-			SharedUserIDs: []int64{},
+			SharedUserIDs:  []int64{},
+			SharedRoleIDs:  []string{},
+			SharedGroupIDs: []int64{},
 		}
 		if sh, ok := sharedByName[strings.ToLower(acc.Name)]; ok {
 			dto.Shared = true
 			dto.SharedSSOAcct = sh.ID
 			dto.SharedUserIDs = append([]int64(nil), sh.SharedUserIDs...)
+			if len(sh.RequiredRoleIDs) > 0 {
+				dto.SharedRoleIDs = append([]string(nil), sh.RequiredRoleIDs...)
+			} else if sh.RequiredRoleID != "" {
+				dto.SharedRoleIDs = []string{sh.RequiredRoleID}
+			}
+			dto.SharedGroupIDs = append([]int64(nil), sh.GroupIDs...)
 			if on, ok := onlineByAcct[sh.ID]; ok {
 				dto.InUse = true
 				dto.InUseOther = !on.ActorIsOwner
@@ -617,9 +631,9 @@ func (a *App) SaveLocalAccount(name, password string, aliases []string) error {
 	return a.local.UpsertAccount(name, password, aliases)
 }
 
-// ShareLocalAccount publishes a local account to SSO as a restricted share for the given user IDs.
-// Empty userIDs keeps the account on SSO for the owner only (clears recipients).
-func (a *App) ShareLocalAccount(name string, userIDs []int64) error {
+// ShareLocalAccount publishes a local account to SSO as a restricted share for users, roles, and/or groups.
+// Empty lists keep the account on SSO for the owner only (clears that grant type).
+func (a *App) ShareLocalAccount(name string, userIDs []int64, roleIDs []string, groupIDs []int64) error {
 	if a.sso == nil || !a.sso.Connected() {
 		return fmt.Errorf("not connected to SSO")
 	}
@@ -653,7 +667,13 @@ func (a *App) ShareLocalAccount(name string, userIDs []int64) error {
 	if userIDs == nil {
 		userIDs = []int64{}
 	}
-	_, err := a.sso.ShareAccount(a.ctx, acc.Name, acc.Password, aliases, userIDs)
+	if roleIDs == nil {
+		roleIDs = []string{}
+	}
+	if groupIDs == nil {
+		groupIDs = []int64{}
+	}
+	_, err := a.sso.ShareAccount(a.ctx, acc.Name, acc.Password, aliases, userIDs, roleIDs, groupIDs)
 	return err
 }
 

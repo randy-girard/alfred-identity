@@ -39,6 +39,8 @@ export namespace app {
 	    has_password: boolean;
 	    shared: boolean;
 	    shared_user_ids: number[];
+	    shared_role_ids: string[];
+	    shared_group_ids: number[];
 	    shared_sso_account_id: number;
 	    in_use: boolean;
 	    in_use_by?: string;
@@ -59,6 +61,8 @@ export namespace app {
 	        this.has_password = source["has_password"];
 	        this.shared = source["shared"];
 	        this.shared_user_ids = source["shared_user_ids"];
+	        this.shared_role_ids = source["shared_role_ids"];
+	        this.shared_group_ids = source["shared_group_ids"];
 	        this.shared_sso_account_id = source["shared_sso_account_id"];
 	        this.in_use = source["in_use"];
 	        this.in_use_by = source["in_use_by"];
@@ -157,6 +161,7 @@ export namespace app {
 	    sso_online: sso.OnlineEntry[];
 	    sso_directory: sso.DirectoryUser[];
 	    sso_groups: sso.GroupDetail[];
+	    sso_roles: sso.DiscordRole[];
 	    sso_admin_users: sso.AdminUser[];
 	    sso_admin_roles: sso.DiscordRole[];
 	    share_activity: sso.ShareActivity;
@@ -182,6 +187,7 @@ export namespace app {
 	        this.sso_online = this.convertValues(source["sso_online"], sso.OnlineEntry);
 	        this.sso_directory = this.convertValues(source["sso_directory"], sso.DirectoryUser);
 	        this.sso_groups = this.convertValues(source["sso_groups"], sso.GroupDetail);
+	        this.sso_roles = this.convertValues(source["sso_roles"], sso.DiscordRole);
 	        this.sso_admin_users = this.convertValues(source["sso_admin_users"], sso.AdminUser);
 	        this.sso_admin_roles = this.convertValues(source["sso_admin_roles"], sso.DiscordRole);
 	        this.share_activity = this.convertValues(source["share_activity"], sso.ShareActivity);

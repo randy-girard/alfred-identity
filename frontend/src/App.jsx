@@ -384,7 +384,7 @@ export default function App() {
   const [importResult, setImportResult] = useState(null)
   const [showLocalPassword, setShowLocalPassword] = useState(false)
   const [shareModal, setShareModal] = useState(false)
-  const [shareForm, setShareForm] = useState({name: '', userIds: [], shared: false})
+  const [shareForm, setShareForm] = useState({name: '', userIds: [], roleIds: [], groupIds: [], shared: false})
   const [sourcesModal, setSourcesModal] = useState(false)
   const [sourceForm, setSourceForm] = useState(null) // null = list view; object = edit/add
   const [sourceJSON, setSourceJSON] = useState('')
@@ -622,6 +622,8 @@ export default function App() {
     setShareForm({
       name: acc.name,
       userIds: [...(acc.shared_user_ids || [])],
+      roleIds: [...(acc.shared_role_ids || [])],
+      groupIds: [...(acc.shared_group_ids || [])],
       shared: !!acc.shared,
     })
     setShareModal(true)
@@ -633,6 +635,26 @@ export default function App() {
       return {
         ...f,
         userIds: has ? f.userIds.filter((id) => id !== userId) : [...f.userIds, userId],
+      }
+    })
+  }
+
+  function toggleShareRole(roleId) {
+    setShareForm((f) => {
+      const has = f.roleIds.includes(roleId)
+      return {
+        ...f,
+        roleIds: has ? f.roleIds.filter((id) => id !== roleId) : [...f.roleIds, roleId],
+      }
+    })
+  }
+
+  function toggleShareGroup(groupId) {
+    setShareForm((f) => {
+      const has = f.groupIds.includes(groupId)
+      return {
+        ...f,
+        groupIds: has ? f.groupIds.filter((id) => id !== groupId) : [...f.groupIds, groupId],
       }
     })
   }
@@ -699,6 +721,21 @@ export default function App() {
   const directory = status?.sso_directory || []
   const myUserId = status?.sso_user_id || 0
   const shareTargets = directory.filter((u) => u.id !== myUserId)
+  const shareRoles = (status?.sso_roles?.length ? status.sso_roles : adminRoles) || []
+  const shareGroups = status?.sso_groups || []
+  const canConfigureShares = shareTargets.length > 0 || shareRoles.length > 0 || shareGroups.length > 0
+
+  function formatShareGrantSummary(acc) {
+    if (!acc.shared) return '—'
+    const parts = []
+    const users = (acc.shared_user_ids || []).length
+    const roles = (acc.shared_role_ids || []).length
+    const groups = (acc.shared_group_ids || []).length
+    if (users) parts.push(`${users} user${users === 1 ? '' : 's'}`)
+    if (roles) parts.push(`${roles} role${roles === 1 ? '' : 's'}`)
+    if (groups) parts.push(`${groups} group${groups === 1 ? '' : 's'}`)
+    return parts.length ? parts.join(', ') : 'owner only'
+  }
 
   function discordUserFromID(id) {
     const fromDir = directory.find((u) => u.id === id)
@@ -778,7 +815,9 @@ export default function App() {
   const sortedLocalAccounts = localSort.sorted(localAccounts, {
     name: (a) => a.name || '',
     aliases: (a) => (a.aliases || []).join(', '),
-    shared: (a) => (a.shared ? (a.shared_user_ids || []).length + 1 : 0),
+    shared: (a) => (a.shared
+      ? (a.shared_user_ids || []).length + (a.shared_role_ids || []).length + (a.shared_group_ids || []).length + 1
+      : 0),
   })
   const sortedOutgoing = outgoingSort.sorted(outgoingSharesByUser, {
     name: (r) => r.user.display_name || r.user.discord_id || '',
@@ -888,7 +927,7 @@ export default function App() {
                       className="mono"
                       value={sourceJSON}
                       onChange={(e) => setSourceJSON(e.target.value)}
-                      placeholder={'{\n  "name": "Guild",\n  "host": "127.0.0.1:8181",\n  "token": "..."\n}'}
+                      placeholder={'{\n  "name": "Guild",\n  "host": "identity.example.com:443",\n  "token": "..."\n}'}
                       disabled={busy}
                       rows={6}
                     />
@@ -915,7 +954,7 @@ export default function App() {
                     <thead>
                       <tr>
                         <SortTh sortKey="name" sort={sourcesSort.sort} onSort={sourcesSort.onSort}>Name</SortTh>
-                        <SortTh sortKey="host" sort={sourcesSort.sort} onSort={sourcesSort.onSort}>Host</SortTh>
+                        <SortTh sortKey="host" sort={sourcesSort.sort} onSort={sourcesSort.onSort} className="col-host">Host</SortTh>
                         <SortTh sortKey="status" sort={sourcesSort.sort} onSort={sourcesSort.onSort}>Status</SortTh>
                         <th className="col-actions">Active</th>
                       </tr>
@@ -927,7 +966,7 @@ export default function App() {
                         return (
                           <tr key={src.id} className={active ? 'row-selected' : ''}>
                             <td>{src.name || src.id}</td>
-                            <td className="mono">{src.host || '—'}</td>
+                            <td className="mono col-ellipsis col-host" title={src.host || ''}>{src.host || '—'}</td>
                             <td>
                               {connected ? 'connected' : active ? 'active' : '—'}
                             </td>
@@ -1117,12 +1156,11 @@ export default function App() {
                           </tr>
                         ) : (
                           sortedLocalAccounts.map((acc) => {
-                            const shareCount = (acc.shared_user_ids || []).length
-                            const canOpenShare = !!status?.sso_connected && (shareTargets.length > 0 || !!acc.shared)
+                            const canOpenShare = !!status?.sso_connected && (canConfigureShares || !!acc.shared)
                             const shareTitle = !status?.sso_connected
                               ? 'Connect with Login w/ SSO to share'
-                              : (shareTargets.length === 0 && !acc.shared
-                                ? 'No other SSO users to share with yet'
+                              : (!canConfigureShares && !acc.shared
+                                ? 'No SSO users, roles, or groups available to share with yet'
                                 : undefined)
                             // Prefer live fields from GetLocalAccounts; fall back to status.share_activity.
                             let inUseOther = !!acc.in_use_other
@@ -1165,9 +1203,7 @@ export default function App() {
                                   {acc.shared ? (
                                     <div className="share-meta">
                                       <div>
-                                        {shareCount
-                                          ? `${shareCount} user${shareCount === 1 ? '' : 's'}`
-                                          : 'owner only'}
+                                        {formatShareGrantSummary(acc)}
                                       </div>
                                       {inUseOther ? (
                                         <div className="share-activity in-use">
@@ -1923,7 +1959,9 @@ export default function App() {
       {shareModal && (() => {
         const myId = status?.sso_user_id || 0
         const directory = (status?.sso_directory || []).filter((u) => u.id !== myId)
-        const canSaveShares = status?.sso_connected && directory.length > 0
+        const roles = (status?.sso_roles?.length ? status.sso_roles : (status?.sso_admin_roles || []))
+        const groups = status?.sso_groups || []
+        const canSaveShares = !!status?.sso_connected
         return (
           <div className="modal-backdrop" onClick={() => setShareModal(false)} role="presentation">
             <div
@@ -1935,29 +1973,79 @@ export default function App() {
             >
               <h2 id="share-modal-title">Share — {shareForm.name}</h2>
               <p className="hint">
-                Publishes this local account to SSO as a private share. Selected users can log in with it
-                over SSO; others cannot see it. Your local copy stays on this machine.
+                Publishes this local account to SSO as a private share. Selected Discord users, roles, and/or
+                access groups can log in with it over SSO; others cannot see it. Your local copy stays on this machine.
               </p>
               {!status?.sso_connected ? (
                 <p className="empty">Connect with Login w/ SSO to share.</p>
-              ) : directory.length === 0 ? (
-                <p className="empty">No other SSO users yet. Someone else must create a token first.</p>
               ) : (
-                <div className="role-checklist">
-                  {directory.map((u) => (
-                    <label key={u.id} className="role-check">
-                      <input
-                        type="checkbox"
-                        checked={shareForm.userIds.includes(u.id)}
-                        onChange={() => toggleShareUser(u.id)}
-                      />
-                      <span className="role-check-label">
-                        <span className="mode-label">{u.display_name || u.discord_id}</span>
-                        <span className="mode-hint mono">{u.discord_id}</span>
-                      </span>
-                    </label>
-                  ))}
-                </div>
+                <>
+                  {directory.length > 0 ? (
+                    <>
+                      <h3 className="share-section-title">Users</h3>
+                      <div className="role-checklist">
+                        {directory.map((u) => (
+                          <label key={u.id} className="role-check">
+                            <input
+                              type="checkbox"
+                              checked={shareForm.userIds.includes(u.id)}
+                              onChange={() => toggleShareUser(u.id)}
+                            />
+                            <span className="role-check-label">
+                              <span className="mode-label">{u.display_name || u.discord_id}</span>
+                              <span className="mode-hint mono">{u.discord_id}</span>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </>
+                  ) : null}
+                  {roles.length > 0 ? (
+                    <>
+                      <h3 className="share-section-title">Discord roles</h3>
+                      <div className="role-checklist">
+                        {roles.map((r) => (
+                          <label key={r.id} className="role-check">
+                            <input
+                              type="checkbox"
+                              checked={shareForm.roleIds.includes(r.id)}
+                              onChange={() => toggleShareRole(r.id)}
+                            />
+                            <span className="role-check-label">
+                              <span className="mode-label">{r.name || r.id}</span>
+                              <span className="mode-hint mono">{r.id}</span>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </>
+                  ) : null}
+                  {groups.length > 0 ? (
+                    <>
+                      <h3 className="share-section-title">Access groups</h3>
+                      <div className="role-checklist">
+                        {groups.map((g) => (
+                          <label key={g.id} className="role-check">
+                            <input
+                              type="checkbox"
+                              checked={shareForm.groupIds.includes(g.id)}
+                              onChange={() => toggleShareGroup(g.id)}
+                            />
+                            <span className="role-check-label">
+                              <span className="mode-label">{g.name || `Group #${g.id}`}</span>
+                              {g.description ? (
+                                <span className="mode-hint">{g.description}</span>
+                              ) : null}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </>
+                  ) : null}
+                  {!directory.length && !roles.length && !groups.length ? (
+                    <p className="empty">No SSO users, Discord roles, or access groups are available yet.</p>
+                  ) : null}
+                </>
               )}
               <div className="modal-actions">
                 {shareForm.shared ? (
@@ -1979,9 +2067,8 @@ export default function App() {
                 <button
                   type="button"
                   disabled={busy || !canSaveShares}
-                  title={!canSaveShares && status?.sso_connected ? 'No other SSO users to share with' : undefined}
                   onClick={() => run(async () => {
-                    await ShareLocalAccount(shareForm.name, shareForm.userIds)
+                    await ShareLocalAccount(shareForm.name, shareForm.userIds, shareForm.roleIds, shareForm.groupIds)
                     setShareModal(false)
                   })}
                 >
@@ -1996,7 +2083,7 @@ export default function App() {
       {sourcesModal && (
         <div className="modal-backdrop" onClick={closeSourcesModal} role="presentation">
           <div
-            className="modal modal-wide"
+            className="modal modal-wide modal-sources"
             role="dialog"
             aria-modal="true"
             aria-labelledby="sources-modal-title"
@@ -2050,8 +2137,8 @@ export default function App() {
                       <thead>
                         <tr>
                           <SortTh sortKey="name" sort={sourcesSort.sort} onSort={sourcesSort.onSort}>Name</SortTh>
-                          <SortTh sortKey="host" sort={sourcesSort.sort} onSort={sourcesSort.onSort}>Host</SortTh>
-                          <SortTh sortKey="token" sort={sourcesSort.sort} onSort={sourcesSort.onSort}>Token</SortTh>
+                          <SortTh sortKey="host" sort={sourcesSort.sort} onSort={sourcesSort.onSort} className="col-host">Host</SortTh>
+                          <SortTh sortKey="token" sort={sourcesSort.sort} onSort={sourcesSort.onSort} className="col-token">Token</SortTh>
                           <th className="col-actions">Actions</th>
                         </tr>
                       </thead>
@@ -2064,8 +2151,8 @@ export default function App() {
                                 <span className="badge live" style={{marginLeft: '0.4rem'}}>active</span>
                               ) : null}
                             </td>
-                            <td className="mono">{src.host || '—'}</td>
-                            <td>{src.has_token ? 'saved' : 'missing'}</td>
+                            <td className="mono col-ellipsis col-host" title={src.host || ''}>{src.host || '—'}</td>
+                            <td className="col-token">{src.has_token ? 'saved' : 'missing'}</td>
                             <td className="col-actions">
                               <button type="button" className="secondary" disabled={busy} onClick={() => startEditSource(src)}>
                                 Edit
@@ -2108,7 +2195,7 @@ export default function App() {
                     <input
                       value={sourceForm.host}
                       onChange={(e) => setSourceForm((f) => ({...f, host: e.target.value}))}
-                      placeholder="127.0.0.1:8181"
+                      placeholder="identity.example.com:443"
                       className="mono"
                     />
                   </div>
@@ -2133,7 +2220,7 @@ export default function App() {
                   </div>
                 </div>
                 <p className="hint">
-                  Host is host:port only (e.g. <code>127.0.0.1:8181</code>). Changing host clears the
+                  Host is host:port only (e.g. <code>identity.example.com:443</code>). Changing host clears the
                   saved token until you paste a new one.
                 </p>
                 {sourceForm.fromImport ? (

@@ -54,16 +54,16 @@ func TestGetLocalAccountsMarksSharedInUse(t *testing.T) {
 func TestShareLocalAccountValidation(t *testing.T) {
 	a, _ := testAppWithConfig(t)
 	a.sso = sso.NewClient()
-	if err := a.ShareLocalAccount("tank", nil); err == nil {
+	if err := a.ShareLocalAccount("tank", nil, nil, nil); err == nil {
 		t.Fatal("expected not connected")
 	}
 	c := sso.NewClient()
 	c.SetStateForTest(sso.TestClientState{Connected: true})
 	a.sso = c
-	if err := a.ShareLocalAccount("", nil); err == nil {
+	if err := a.ShareLocalAccount("", nil, nil, nil); err == nil {
 		t.Fatal("expected account required")
 	}
-	if err := a.ShareLocalAccount("missing", nil); err == nil {
+	if err := a.ShareLocalAccount("missing", nil, nil, nil); err == nil {
 		t.Fatal("expected not found")
 	}
 }
