@@ -729,6 +729,39 @@ button.secondary.danger:hover:not(:disabled) {
   justify-content: space-between;
 }
 
+.status-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.list-filter {
+  display: inline-flex;
+  margin: 0;
+  min-width: 11rem;
+  max-width: 16rem;
+  flex: 1 1 11rem;
+}
+
+.list-filter input {
+  width: 100%;
+  margin: 0;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .btn-split {
   display: inline-flex;
   align-items: stretch;

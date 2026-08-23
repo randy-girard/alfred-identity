@@ -370,9 +370,24 @@ function useTableSort(defaultKey, defaultDir = 1) {
   return {sort, onSort, sorted}
 }
 
+/** Case-insensitive substring match across any of the given field values. */
+function rowMatchesFilter(query, values) {
+  const needle = String(query || '').trim().toLowerCase()
+  if (!needle) return true
+  return values.some((v) => {
+    if (v == null || v === '') return false
+    if (Array.isArray(v)) {
+      return v.some((x) => String(x ?? '').toLowerCase().includes(needle))
+    }
+    return String(v).toLowerCase().includes(needle)
+  })
+}
+
 export default function App() {
   const [tab, setTab] = useState('proxy')
   const [accountSub, setAccountSub] = useState('sso')
+  const [ssoFilter, setSsoFilter] = useState('')
+  const [localFilter, setLocalFilter] = useState('')
   const [status, setStatus] = useState(null)
   const [localAccounts, setLocalAccounts] = useState([])
   const [localForm, setLocalForm] = useState(blankLocalForm)
@@ -737,6 +752,38 @@ export default function App() {
     return parts.length ? parts.join(', ') : 'owner only'
   }
 
+  function ssoAccessLabel(a) {
+    if (a.disabled) return 'disabled'
+    if (a.restricted) return 'private share'
+    const parts = []
+    const roleIDs = (a.required_role_ids && a.required_role_ids.length)
+      ? a.required_role_ids
+      : (a.required_role_id ? [a.required_role_id] : [])
+    for (const rid of roleIDs) parts.push(roleNameById(adminRoles, rid))
+    const userIDs = (a.required_user_ids && a.required_user_ids.length)
+      ? a.required_user_ids
+      : (a.required_user_id ? [a.required_user_id] : [])
+    for (const uid of userIDs) {
+      const u = discordUserFromID(uid)
+      parts.push(u.display_name || u.discord_id || `#${uid}`)
+    }
+    for (const gid of a.group_ids || []) {
+      const g = (status?.sso_groups || []).find((x) => x.id === gid)
+      parts.push(g?.name || `group #${gid}`)
+    }
+    return parts.length ? parts.join(', ') : 'all'
+  }
+
+  function ssoLoggedInLabel(a) {
+    const fromDaemon = (status?.sso_online || []).find((o) => o.account_id === a.id)
+    if (fromDaemon?.character_name) return fromDaemon.character_name
+    const localOnline = status?.online || []
+    for (const ch of a.characters || []) {
+      if (localOnline.some((n) => n.toLowerCase() === ch.toLowerCase())) return ch
+    }
+    return ''
+  }
+
   function discordUserFromID(id) {
     const fromDir = directory.find((u) => u.id === id)
     if (fromDir) return fromDir
@@ -781,38 +828,51 @@ export default function App() {
   const incomingSort = useTableSort('account')
   const sourcesSort = useTableSort('name')
 
-  const sortedSSOAccounts = ssoSort.sorted(status?.sso_accounts || [], {
+  const filteredSSOAccounts = (status?.sso_accounts || []).filter((a) => {
+    const access = ssoAccessLabel(a)
+    const loggedIn = ssoLoggedInLabel(a)
+    return rowMatchesFilter(ssoFilter, [
+      a.username,
+      a.aliases,
+      a.tags,
+      a.characters,
+      access,
+      loggedIn,
+      a.required_role_id,
+      a.required_role_ids,
+    ])
+  })
+  const sortedSSOAccounts = ssoSort.sorted(filteredSSOAccounts, {
     username: (a) => a.username || '',
     aliases: (a) => (a.aliases || []).join(', '),
     tags: (a) => (a.tags || []).join(', '),
     characters: (a) => (a.characters || []).join(', '),
-    access: (a) => {
-      if (a.disabled) return 'disabled'
-      if (a.restricted) return 'private share'
-      const parts = []
-      const roleIDs = (a.required_role_ids && a.required_role_ids.length)
-        ? a.required_role_ids
-        : (a.required_role_id ? [a.required_role_id] : [])
-      for (const rid of roleIDs) parts.push(roleNameById(adminRoles, rid))
-      const userIDs = (a.required_user_ids && a.required_user_ids.length)
-        ? a.required_user_ids
-        : (a.required_user_id ? [a.required_user_id] : [])
-      for (const uid of userIDs) {
-        const u = discordUserFromID(uid)
-        parts.push(u.display_name || u.discord_id || '')
-      }
-      for (const gid of a.group_ids || []) {
-        const g = (status?.sso_groups || []).find((x) => x.id === gid)
-        parts.push(g?.name || `group #${gid}`)
-      }
-      return parts.length ? parts.join(', ') : 'all'
-    },
-    logged: (a) => {
-      const fromDaemon = (status?.sso_online || []).find((o) => o.account_id === a.id)
-      return fromDaemon?.character_name || ''
-    },
+    access: (a) => ssoAccessLabel(a),
+    logged: (a) => ssoLoggedInLabel(a),
   })
-  const sortedLocalAccounts = localSort.sorted(localAccounts, {
+  const filteredLocalAccounts = localAccounts.filter((acc) => {
+    const shareUserNames = (acc.shared_user_ids || []).map((uid) => {
+      const u = discordUserFromID(uid)
+      return [u.display_name, u.discord_id]
+    }).flat()
+    const shareRoleNames = (acc.shared_role_ids || []).map((rid) => roleNameById(shareRoles, rid))
+    const shareGroupNames = (acc.shared_group_ids || []).map((gid) => {
+      const g = shareGroups.find((x) => x.id === gid)
+      return g?.name || `group #${gid}`
+    })
+    return rowMatchesFilter(localFilter, [
+      acc.name,
+      acc.aliases,
+      formatShareGrantSummary(acc),
+      shareUserNames,
+      shareRoleNames,
+      shareGroupNames,
+      acc.in_use_by,
+      acc.last_login_by,
+      acc.shared ? 'shared' : '',
+    ])
+  })
+  const sortedLocalAccounts = localSort.sorted(filteredLocalAccounts, {
     name: (a) => a.name || '',
     aliases: (a) => (a.aliases || []).join(', '),
     shared: (a) => (a.shared
@@ -1026,9 +1086,22 @@ export default function App() {
                     <>
                       <div className="row status-head">
                         <h2>Accounts</h2>
+                        <label className="list-filter">
+                          <span className="sr-only">Filter accounts</span>
+                          <input
+                            type="search"
+                            value={ssoFilter}
+                            onChange={(e) => setSsoFilter(e.target.value)}
+                            placeholder="Filter accounts…"
+                            autoComplete="off"
+                            spellCheck={false}
+                          />
+                        </label>
                       </div>
                       {(status.sso_accounts?.length || 0) === 0 ? (
                         <p className="empty">No accounts available yet. Admins manage them in the web admin.</p>
+                      ) : sortedSSOAccounts.length === 0 ? (
+                        <p className="empty">No accounts match “{ssoFilter.trim()}”.</p>
                       ) : (
                         <div className="table-wrap">
                           <table className="data-table">
@@ -1044,43 +1117,8 @@ export default function App() {
                             </thead>
                             <tbody>
                               {sortedSSOAccounts.map((a) => {
-                                const fromDaemon = (status.sso_online || []).find((o) => o.account_id === a.id)
-                                let loggedIn = fromDaemon?.character_name || ''
-                                if (!loggedIn) {
-                                  const localOnline = status.online || []
-                                  for (const ch of a.characters || []) {
-                                    if (localOnline.some((n) => n.toLowerCase() === ch.toLowerCase())) {
-                                      loggedIn = ch
-                                      break
-                                    }
-                                  }
-                                }
-                                const accessParts = []
-                                if (a.disabled) {
-                                  accessParts.push('disabled')
-                                } else if (a.restricted) {
-                                  accessParts.push('private share')
-                                } else {
-                                  const roleIDs = (a.required_role_ids && a.required_role_ids.length)
-                                    ? a.required_role_ids
-                                    : (a.required_role_id ? [a.required_role_id] : [])
-                                  for (const rid of roleIDs) {
-                                    accessParts.push(roleNameById(adminRoles, rid))
-                                  }
-                                  const userIDs = (a.required_user_ids && a.required_user_ids.length)
-                                    ? a.required_user_ids
-                                    : (a.required_user_id ? [a.required_user_id] : [])
-                                  for (const uid of userIDs) {
-                                    const u = discordUserFromID(uid)
-                                    accessParts.push(u.display_name || u.discord_id || `#${uid}`)
-                                  }
-                                  for (const gid of a.group_ids || []) {
-                                    const g = (status?.sso_groups || []).find((x) => x.id === gid)
-                                    accessParts.push(g?.name || `group #${gid}`)
-                                  }
-                                  if (!accessParts.length) accessParts.push('all')
-                                }
-                                const access = accessParts.join(', ')
+                                const loggedIn = ssoLoggedInLabel(a)
+                                const access = ssoAccessLabel(a)
                                 const aliases = (a.aliases || []).filter(
                                   (al) => !a.username || al.toLowerCase() !== a.username.toLowerCase(),
                                 )
@@ -1116,26 +1154,39 @@ export default function App() {
 
                   <div className="row status-head">
                     <h2>Accounts</h2>
-                    <div className="btn-split">
-                      <button type="button" className="secondary" disabled={busy} onClick={startNewLocal}>
-                        Add account
-                      </button>
-                      <ActionMenu
-                        disabled={busy}
-                        label="More account actions"
-                        items={[
-                          {
-                            id: 'import-csv',
-                            label: 'Import CSV…',
-                            onClick: () => openImportModal(),
-                          },
-                          {
-                            id: 'export-csv',
-                            label: 'Export CSV…',
-                            onClick: () => run(() => ExportLocalAccountsCSV()),
-                          },
-                        ]}
-                      />
+                    <div className="status-head-actions">
+                      <label className="list-filter">
+                        <span className="sr-only">Filter accounts</span>
+                        <input
+                          type="search"
+                          value={localFilter}
+                          onChange={(e) => setLocalFilter(e.target.value)}
+                          placeholder="Filter accounts…"
+                          autoComplete="off"
+                          spellCheck={false}
+                        />
+                      </label>
+                      <div className="btn-split">
+                        <button type="button" className="secondary" disabled={busy} onClick={startNewLocal}>
+                          Add account
+                        </button>
+                        <ActionMenu
+                          disabled={busy}
+                          label="More account actions"
+                          items={[
+                            {
+                              id: 'import-csv',
+                              label: 'Import CSV…',
+                              onClick: () => openImportModal(),
+                            },
+                            {
+                              id: 'export-csv',
+                              label: 'Export CSV…',
+                              onClick: () => run(() => ExportLocalAccountsCSV()),
+                            },
+                          ]}
+                        />
+                      </div>
                     </div>
                   </div>
 
@@ -1150,9 +1201,13 @@ export default function App() {
                         </tr>
                       </thead>
                       <tbody>
-                        {sortedLocalAccounts.length === 0 ? (
+                        {localAccounts.length === 0 ? (
                           <tr>
                             <td colSpan={4} className="empty-cell">No local accounts yet.</td>
+                          </tr>
+                        ) : sortedLocalAccounts.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="empty-cell">No accounts match “{localFilter.trim()}”.</td>
                           </tr>
                         ) : (
                           sortedLocalAccounts.map((acc) => {
