@@ -7,6 +7,11 @@ import (
 	"time"
 )
 
+func eqLogLine(msg string) string {
+	ts := time.Now().Format(eqTimeLayout)
+	return "[" + ts + "] " + msg + "\n"
+}
+
 func TestCharacterFromFilename(t *testing.T) {
 	if got := characterFromFilename("eqlog_MyHero_P1999Green.txt"); got != "MyHero" {
 		t.Fatalf("%q", got)
@@ -34,35 +39,75 @@ func TestOnlineCharactersIdle(t *testing.T) {
 	}
 }
 
-func TestScanWelcome(t *testing.T) {
+func TestScanSkipsHistoricalContent(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "eqlog_Tank_server.txt")
-	if err := os.WriteFile(path, []byte("Welcome to EverQuest!\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(eqLogLine("Welcome to EverQuest!")), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	w := New(dir)
 	offsets := map[string]int64{}
-	w.scan(offsets)
+	seeded := map[string]bool{}
+	w.scan(offsets, seeded)
+	if len(w.OnlineCharacters()) != 0 {
+		t.Fatalf("historical welcome must not mark online: %#v", w.OnlineCharacters())
+	}
+	if offsets[path] == 0 {
+		t.Fatal("expected tail offset seeded")
+	}
+
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.WriteString(eqLogLine("Welcome to EverQuest!"))
+	_ = f.Close()
+	w.scan(offsets, seeded)
 	online := w.OnlineCharacters()
 	if len(online) != 1 || online[0] != "Tank" {
 		t.Fatalf("%#v", online)
 	}
-	// no growth → still online, offset unchanged size
-	prev := offsets[path]
-	w.scan(offsets)
-	if offsets[path] != prev {
-		t.Fatalf("offset changed without growth")
-	}
 }
 
-func TestScanYouHaveEntered(t *testing.T) {
+func TestScanIgnoresUntimestampedLines(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "eqlog_Zone_server.txt")
 	if err := os.WriteFile(path, []byte("You have entered West Freeport.\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	w := New(dir)
-	w.scan(map[string]int64{})
+	offsets := map[string]int64{}
+	seeded := map[string]bool{}
+	w.scan(offsets, seeded) // seed
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.WriteString("You have entered West Freeport.\n")
+	_ = f.Close()
+	w.scan(offsets, seeded)
+	if len(w.OnlineCharacters()) != 0 {
+		t.Fatalf("untimestamped enter must not mark online: %#v", w.OnlineCharacters())
+	}
+}
+
+func TestScanYouHaveEntered(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "eqlog_Zone_server.txt")
+	if err := os.WriteFile(path, []byte(eqLogLine("You have entered West Freeport.")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w := New(dir)
+	offsets := map[string]int64{}
+	seeded := map[string]bool{}
+	w.scan(offsets, seeded) // seed tail
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.WriteString(eqLogLine("You have entered West Freeport."))
+	_ = f.Close()
+	w.scan(offsets, seeded)
 	online := w.OnlineCharacters()
 	if len(online) != 1 || online[0] != "Zone" {
 		t.Fatalf("%#v", online)
@@ -72,26 +117,34 @@ func TestScanYouHaveEntered(t *testing.T) {
 func TestScanCampPrepareExpiresWithoutActivityRefresh(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "eqlog_Camper_server.txt")
-	if err := os.WriteFile(path, []byte("Welcome to EverQuest!\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(eqLogLine("Welcome to EverQuest!")), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	w := New(dir)
 	w.idle = time.Minute
 	offsets := map[string]int64{}
-	w.scan(offsets)
+	seeded := map[string]bool{}
+	w.scan(offsets, seeded)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.WriteString(eqLogLine("Welcome to EverQuest!"))
+	_ = f.Close()
+	w.scan(offsets, seeded)
 	online, _ := w.Poll()
 	if len(online) != 1 {
 		t.Fatalf("expected online after welcome")
 	}
 
-	// Append camp + combat spam; combat must not extend presence while camping.
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	f, err = os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _ = f.WriteString("It will take you about 30 seconds to prepare your camp.\nYou hit a gnoll for 1 point of damage.\n")
+	_, _ = f.WriteString(eqLogLine("It will take you about 30 seconds to prepare your camp.") +
+		eqLogLine("You hit a gnoll for 1 point of damage."))
 	_ = f.Close()
-	w.scan(offsets)
+	w.scan(offsets, seeded)
 	online, _ = w.Poll()
 	if len(online) != 1 {
 		t.Fatalf("expected still online while camping: %v", online)
@@ -108,7 +161,6 @@ func TestScanCampPrepareExpiresWithoutActivityRefresh(t *testing.T) {
 		t.Fatalf("camp expiry skew: until=%v", time.Until(exp))
 	}
 
-	// Force expiry.
 	w.mu.Lock()
 	w.online["Camper"] = time.Now().Add(-time.Second)
 	w.mu.Unlock()
@@ -125,23 +177,32 @@ func TestScanCampAbandon(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "eqlog_Stay_server.txt")
 	if err := os.WriteFile(path, []byte(
-		"Welcome to EverQuest!\nIt will take you about 30 seconds to prepare your camp.\n",
+		eqLogLine("Welcome to EverQuest!")+eqLogLine("It will take you about 30 seconds to prepare your camp."),
 	), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	w := New(dir)
 	offsets := map[string]int64{}
-	w.scan(offsets)
-	if !w.camping["Stay"] {
-		t.Fatal("expected camping")
-	}
+	seeded := map[string]bool{}
+	w.scan(offsets, seeded)
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _ = f.WriteString("You abandon your preparations to camp.\n")
+	_, _ = f.WriteString(eqLogLine("Welcome to EverQuest!") +
+		eqLogLine("It will take you about 30 seconds to prepare your camp."))
 	_ = f.Close()
-	w.scan(offsets)
+	w.scan(offsets, seeded)
+	if !w.camping["Stay"] {
+		t.Fatal("expected camping")
+	}
+	f, err = os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.WriteString(eqLogLine("You abandon your preparations to camp."))
+	_ = f.Close()
+	w.scan(offsets, seeded)
 	if w.camping["Stay"] {
 		t.Fatal("camping should clear on abandon")
 	}
@@ -150,22 +211,41 @@ func TestScanCampAbandon(t *testing.T) {
 	}
 }
 
-func TestScanTruncateResetsOffset(t *testing.T) {
+func TestScanTruncateRequiresRecentTimestamp(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "eqlog_Hero_server.txt")
-	if err := os.WriteFile(path, []byte("Welcome to EverQuest!\nextra\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(eqLogLine("Welcome to EverQuest!")+"extra\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	w := New(dir)
 	offsets := map[string]int64{}
-	w.scan(offsets)
-	if offsets[path] == 0 {
-		t.Fatal("expected offset")
+	seeded := map[string]bool{}
+	w.scan(offsets, seeded)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
 	}
+	_, _ = f.WriteString(eqLogLine("Welcome to EverQuest!"))
+	_ = f.Close()
+	w.scan(offsets, seeded)
+
+	// Truncate with stale (untimestamped) enter must not mark online.
 	if err := os.WriteFile(path, []byte("You have entered East Commonlands.\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	w.scan(offsets)
+	w.scan(offsets, seeded)
+	if len(w.OnlineCharacters()) != 0 {
+		t.Fatalf("stale truncate should not mark online: %#v", w.OnlineCharacters())
+	}
+
+	// Fresh timestamped enter appended after truncate does mark online.
+	f, err = os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.WriteString(eqLogLine("You have entered East Commonlands."))
+	_ = f.Close()
+	w.scan(offsets, seeded)
 	st, _ := os.Stat(path)
 	if offsets[path] != st.Size() {
 		t.Fatalf("offset=%d size=%d", offsets[path], st.Size())
@@ -173,5 +253,37 @@ func TestScanTruncateResetsOffset(t *testing.T) {
 	online := w.OnlineCharacters()
 	if len(online) != 1 || online[0] != "Hero" {
 		t.Fatalf("%#v", online)
+	}
+}
+
+func TestMtimeStaleClearsOnline(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "eqlog_Hero_server.txt")
+	if err := os.WriteFile(path, []byte(eqLogLine("Welcome to EverQuest!")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w := New(dir)
+	w.idle = 30 * time.Second
+	offsets := map[string]int64{}
+	seeded := map[string]bool{}
+	w.scan(offsets, seeded)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.WriteString(eqLogLine("Welcome to EverQuest!"))
+	_ = f.Close()
+	w.scan(offsets, seeded)
+	if len(w.OnlineCharacters()) != 1 {
+		t.Fatalf("expected online: %#v", w.OnlineCharacters())
+	}
+
+	old := time.Now().Add(-2 * time.Minute)
+	if err := os.Chtimes(path, old, old); err != nil {
+		t.Fatal(err)
+	}
+	w.scan(offsets, seeded)
+	if len(w.OnlineCharacters()) != 0 {
+		t.Fatalf("stale mtime should clear online: %#v", w.OnlineCharacters())
 	}
 }

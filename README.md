@@ -126,7 +126,7 @@ Set on **Connections** (or the status bar at the bottom):
 
 - **Install directory** — used for log watching (online character count in the status bar) and `eqhost.txt`
 - **eqhost.txt** — view, edit, save; first save creates `eqhost.txt.bak`; **Restore backup** rolls back
-- **Online (from logs)** — characters seen recently in `eqlog_*.txt` files
+- **Online (from logs)** — characters with fresh timestamped enter/welcome lines in `eqlog_*.txt` (tail-only; stale logs do not block login)
 
 ### Logs tab
 
