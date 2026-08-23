@@ -54,12 +54,8 @@ func TestCheckNotFound(t *testing.T) {
 	githubAPIBase = srv.URL
 	defer func() { githubAPIBase = old }()
 
-	res, err := Check(context.Background(), "acme/missing", "0.1.0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.UpdateAvailable || res.Latest != "0.1.0" {
-		t.Fatalf("%+v", res)
+	if _, err := Check(context.Background(), "acme/missing", "0.1.0"); err == nil {
+		t.Fatal("expected error when release is missing")
 	}
 }
 

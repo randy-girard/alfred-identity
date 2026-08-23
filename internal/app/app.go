@@ -1664,7 +1664,7 @@ func (a *App) CheckUpdate() (UpdateInfo, error) {
 	if isDevVersion(Version) {
 		return UpdateInfo{Current: Version}, nil
 	}
-	repo := "alfred-identity/app"
+	repo := sources.DefaultGitHubRepo
 	if a.cfg != nil && a.cfg.Get().GitHubRepo != "" {
 		repo = a.cfg.Get().GitHubRepo
 	}

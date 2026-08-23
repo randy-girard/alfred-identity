@@ -14,6 +14,9 @@ import (
 
 const DefaultWSPath = "/ws/sso"
 
+// DefaultGitHubRepo is the owner/repo used for release update checks.
+const DefaultGitHubRepo = "randy-girard/alfred-identity"
+
 // ConnectionMode controls the UDP proxy and SSO client.
 type ConnectionMode string
 
@@ -91,7 +94,7 @@ func Load(path string) (*Manager, error) {
 			m.cfg = Config{
 				ListenAddr:     "127.0.0.1:6998",
 				UpstreamAddr:   "login.eqemulator.net:5998",
-				GitHubRepo:     "alfred-identity/app",
+				GitHubRepo:     DefaultGitHubRepo,
 				ActiveSourceID: "",
 				ConnectionMode: ConnectionDisabled,
 				Sources:        []Source{},
@@ -118,6 +121,9 @@ func Load(path string) (*Manager, error) {
 	if migrateConnectionMode(&m.cfg) {
 		migrated = true
 	}
+	if migrateGitHubRepo(&m.cfg) {
+		migrated = true
+	}
 	if migrated {
 		_ = m.Save()
 	}
@@ -138,6 +144,18 @@ func migrateConnectionMode(c *Config) bool {
 	c.ConnectionMode = NormalizeConnectionMode(c.ConnectionMode)
 	c.ProxyEnabled = false // stop writing the legacy flag
 	return c.ConnectionMode != before || legacyProxy
+}
+
+// migrateGitHubRepo fixes the legacy placeholder repo used before public releases existed.
+func migrateGitHubRepo(c *Config) bool {
+	before := strings.TrimSpace(c.GitHubRepo)
+	switch before {
+	case "", "alfred-identity/app":
+		c.GitHubRepo = DefaultGitHubRepo
+		return c.GitHubRepo != before
+	default:
+		return false
+	}
 }
 
 // migrateSource normalizes Host from Host or legacy URL. Returns true if changed.

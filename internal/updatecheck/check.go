@@ -45,7 +45,7 @@ func Check(ctx context.Context, ownerRepo, current string) (Result, error) {
 	}
 	defer res.Body.Close()
 	if res.StatusCode == http.StatusNotFound {
-		return Result{Current: current, Latest: current}, nil
+		return Result{}, fmt.Errorf("no GitHub release found for %s", ownerRepo)
 	}
 	if res.StatusCode != 200 {
 		return Result{}, fmt.Errorf("github api %d", res.StatusCode)
