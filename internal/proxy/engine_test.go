@@ -87,20 +87,35 @@ func TestEngineHandleClientLoginFailDoesNotForward(t *testing.T) {
 		AccountsPath:   filepath.Join(dir, "a.csv"),
 		CharactersPath: filepath.Join(dir, "c.csv"),
 	}
-	if err := store.UpsertAccount("user", "secret", nil); err != nil {
+	if err := store.UpsertAccount("a1", "secret", []string{"shared"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpsertAccount("a2", "secret", []string{"shared"}); err != nil {
 		t.Fatal(err)
 	}
 	e := &Engine{
 		Router: &router.Router{
 			Local: store,
 			BusyFn: func() map[string]bool {
-				return map[string]bool{"user": true}
+				return map[string]bool{"a1": true, "a2": true}
 			},
 		},
 	}
-	actions := e.handleClient(context.Background(), combinedLoginPacket(t))
+	pkt := combinedLoginPacket(t)
+	login, ok := protocol.ParseLoginPacket(pkt)
+	if !ok {
+		t.Fatal("parse")
+	}
+	login.Username = "shared"
+	// Rebuild isn't needed — handleClient parses raw bytes; rewrite username in packet via RewriteCredentials then... 
+	// Easier: put username "shared" into a packet by rewriting credentials from a parsed login.
+	rewritten, err := login.RewriteCredentials("shared", "x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	actions := e.handleClient(context.Background(), rewritten)
 	if len(actions.SendUpstream) != 0 {
-		t.Fatalf("expected drop, got %d upstream packets", len(actions.SendUpstream))
+		t.Fatalf("expected drop for busy alias pool, got %d upstream packets", len(actions.SendUpstream))
 	}
 }
 
