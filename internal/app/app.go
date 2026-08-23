@@ -135,6 +135,9 @@ func (a *App) Startup(ctx context.Context) {
 		return
 	}
 	a.cfg = mgr
+	if err := mgr.NormalizeGitHubRepo(); err != nil {
+		a.log.Warn("github repo normalize", "err", err)
+	}
 	cfg := mgr.Get()
 
 	accPath, charPath := cfg.AccountsCSV, cfg.CharactersCSV
@@ -1665,8 +1668,13 @@ func (a *App) CheckUpdate() (UpdateInfo, error) {
 		return UpdateInfo{Current: Version}, nil
 	}
 	repo := sources.DefaultGitHubRepo
-	if a.cfg != nil && a.cfg.Get().GitHubRepo != "" {
-		repo = a.cfg.Get().GitHubRepo
+	if a.cfg != nil {
+		if err := a.cfg.NormalizeGitHubRepo(); err != nil {
+			a.log.Warn("github repo normalize", "err", err)
+		}
+		if r := strings.TrimSpace(a.cfg.Get().GitHubRepo); r != "" {
+			repo = r
+		}
 	}
 	res, err := updatecheck.Check(a.ctx, repo, Version)
 	if err != nil {
