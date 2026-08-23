@@ -383,7 +383,46 @@ func (c *Client) Connect(parent context.Context, wsURL, token, clientVersion str
 		return err
 	}
 	go c.readLoop(ctx)
+	go c.keepaliveLoop(ctx)
 	return nil
+}
+
+// keepaliveInterval is how often the client sends a ping while connected.
+// Character heartbeats only fire when someone is online; without this, idle
+// sockets are often closed by reverse proxies around ~60s of silence.
+var keepaliveInterval = 25 * time.Second
+
+// SetKeepaliveIntervalForTest overrides the SSO ping interval. Returns restore.
+func SetKeepaliveIntervalForTest(d time.Duration) func() {
+	old := keepaliveInterval
+	keepaliveInterval = d
+	return func() { keepaliveInterval = old }
+}
+
+func (c *Client) keepaliveLoop(ctx context.Context) {
+	t := time.NewTicker(keepaliveInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			c.mu.Lock()
+			conn := c.conn
+			ok := c.connected && conn != nil
+			c.mu.Unlock()
+			if !ok {
+				return
+			}
+			pingCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			err := c.writeJSON(pingCtx, conn, map[string]any{"type": "ping"})
+			cancel()
+			if err != nil {
+				// readLoop will clear connected when the socket dies
+				return
+			}
+		}
+	}
 }
 
 func (c *Client) readLoop(ctx context.Context) {
@@ -508,6 +547,15 @@ func (c *Client) readLoop(ctx context.Context) {
 				default:
 				}
 			}
+		case "ping":
+			c.mu.Lock()
+			conn := c.conn
+			c.mu.Unlock()
+			if conn != nil {
+				_ = c.writeJSON(ctx, conn, map[string]any{"type": "pong"})
+			}
+		case "pong":
+			// keepalive ack from server
 		}
 	}
 }

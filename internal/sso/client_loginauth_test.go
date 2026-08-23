@@ -245,6 +245,90 @@ func startMockSSOServer(t *testing.T, onMessage func(typ string, data []byte) ma
 	}
 }
 
+func TestClientPingGetsPong(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	pings := make(chan struct{}, 4)
+	wsURL, cleanup := startMockSSOServer(t, func(typ string, data []byte) map[string]any {
+		switch typ {
+		case "auth", "get_state":
+			return fullStateMessage(false)
+		case "ping":
+			select {
+			case pings <- struct{}{}:
+			default:
+			}
+			return map[string]any{"type": "pong"}
+		default:
+			return nil
+		}
+	})
+	defer cleanup()
+
+	c := NewClient()
+	if err := c.Connect(ctx, wsURL, "token", "gui/test"); err != nil {
+		t.Fatal(err)
+	}
+	defer c.Disconnect()
+	waitForSSOState(t, c, false)
+
+	c.mu.Lock()
+	conn := c.conn
+	c.mu.Unlock()
+	if err := c.writeJSON(ctx, conn, map[string]any{"type": "ping"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-pings:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected server to see ping")
+	}
+	if !c.Connected() {
+		t.Fatal("disconnected after ping/pong")
+	}
+}
+
+func TestKeepaliveLoopSendsPing(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	restore := SetKeepaliveIntervalForTest(40 * time.Millisecond)
+	defer restore()
+
+	pings := make(chan struct{}, 8)
+	wsURL, cleanup := startMockSSOServer(t, func(typ string, data []byte) map[string]any {
+		switch typ {
+		case "auth", "get_state":
+			return fullStateMessage(false)
+		case "ping":
+			select {
+			case pings <- struct{}{}:
+			default:
+			}
+			return map[string]any{"type": "pong"}
+		default:
+			return nil
+		}
+	})
+	defer cleanup()
+
+	c := NewClient()
+	if err := c.Connect(ctx, wsURL, "token", "gui/test"); err != nil {
+		t.Fatal(err)
+	}
+	defer c.Disconnect()
+	waitForSSOState(t, c, false)
+
+	select {
+	case <-pings:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected keepalive ping")
+	}
+	if !c.Connected() {
+		t.Fatal("disconnected during keepalive")
+	}
+}
+
 func TestConnectReceivesFullState(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
