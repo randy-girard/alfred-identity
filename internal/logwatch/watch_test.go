@@ -26,7 +26,8 @@ func TestCharacterFromFilename(t *testing.T) {
 
 func TestOnlineCharactersIdle(t *testing.T) {
 	w := New(t.TempDir())
-	w.idle = time.Minute
+	w.presenceIdle = time.Minute
+	w.busyIdle = time.Minute
 	now := time.Now()
 	w.presence["Hero"] = now.Add(time.Minute)
 	w.presence["Idle"] = now.Add(-time.Second)
@@ -42,11 +43,11 @@ func TestOnlineCharactersIdle(t *testing.T) {
 func TestScanSkipsStaleHistoricalContent(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "eqlog_Tank_server.txt")
-	oldTS := time.Now().Add(-2 * time.Minute).Format(eqTimeLayout)
+	oldTS := time.Now().Add(-10 * time.Minute).Format(eqTimeLayout)
 	if err := os.WriteFile(path, []byte("["+oldTS+"] Welcome to EverQuest!\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	old := time.Now().Add(-2 * time.Minute)
+	old := time.Now().Add(-10 * time.Minute)
 	_ = os.Chtimes(path, old, old)
 	w := New(dir)
 	offsets := map[string]int64{}
@@ -171,7 +172,8 @@ func TestScanCampPrepareExpiresWithoutActivityRefresh(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := New(dir)
-	w.idle = time.Minute
+	w.presenceIdle = time.Minute
+	w.busyIdle = time.Minute
 	offsets := map[string]int64{}
 	seeded := map[string]bool{}
 	w.scan(offsets, seeded)
@@ -313,7 +315,8 @@ func TestMtimeStaleClearsOnline(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := New(dir)
-	w.idle = 30 * time.Second
+	w.presenceIdle = 30 * time.Second
+	w.busyIdle = 30 * time.Second
 	offsets := map[string]int64{}
 	seeded := map[string]bool{}
 	w.scan(offsets, seeded)
@@ -335,5 +338,41 @@ func TestMtimeStaleClearsOnline(t *testing.T) {
 	w.scan(offsets, seeded)
 	if len(w.OnlineCharacters()) != 0 {
 		t.Fatalf("stale mtime should clear online: %#v", w.OnlineCharacters())
+	}
+}
+
+func TestQuietZoneKeepsPresenceWithoutBusy(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "eqlog_AFK_server.txt")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w := New(dir)
+	w.presenceIdle = 2 * time.Minute
+	w.busyIdle = 30 * time.Second
+	offsets := map[string]int64{}
+	seeded := map[string]bool{}
+	w.scan(offsets, seeded)
+
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.WriteString(eqLogLine("You have entered East Commonlands."))
+	_ = f.Close()
+	w.scan(offsets, seeded)
+	if len(w.OnlineNames()) != 1 || len(w.BusyNames()) != 1 {
+		t.Fatalf("expected presence+busy after enter online=%v busy=%v", w.OnlineNames(), w.BusyNames())
+	}
+
+	// Simulate quiet zone: expire busy only; presence remains.
+	w.mu.Lock()
+	w.busy["AFK"] = time.Now().Add(-time.Second)
+	w.mu.Unlock()
+	if len(w.BusyNames()) != 0 {
+		t.Fatal("busy should clear")
+	}
+	if len(w.OnlineNames()) != 1 {
+		t.Fatalf("presence should survive quiet zone: %#v", w.OnlineNames())
 	}
 }

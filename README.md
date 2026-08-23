@@ -126,7 +126,7 @@ Set on **Connections** (or the status bar at the bottom):
 
 - **Install directory** — used for log watching (online character count in the status bar) and `eqhost.txt`
 - **eqhost.txt** — view, edit, save; first save creates `eqhost.txt.bak`; **Restore backup** rolls back
-- **Online (from logs)** — characters with fresh timestamped enter/welcome/activity in `eqlog_*.txt` (on startup, actively written logs are inspected so an already in-game session can resync SSO presence; stale logs do not block login)
+- **Online (from logs)** — SSO/web presence lasts up to ~5 minutes of quiet log silence (AFK zones); local login “busy” still clears in ~30s; camp clears in ~35s. Actively written logs are inspected on startup so an already in-game session can resync SSO presence.
 
 ### Logs tab
 

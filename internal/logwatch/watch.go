@@ -10,10 +10,17 @@ import (
 	"time"
 )
 
-// DefaultIdle is the backup offline timeout: after the last fresh EQ log activity
-// a character stays "online" this long. Covers /quit, crashes, and force-close
-// where there is no camp line (same idea as p99-login-proxy's 30s mtime gate).
-const DefaultIdle = 30 * time.Second
+// DefaultBusyIdle is how long enter/welcome evidence blocks local login reuse.
+// Also used as the short "definitely still writing" gate for busy state.
+const DefaultBusyIdle = 30 * time.Second
+
+// DefaultPresenceIdle is how long SSO/web presence survives quiet zones with
+// little or no log spam. Camp still expires on CampGrace; crash/quit without a
+// camp line takes up to this long to clear the web UI.
+const DefaultPresenceIdle = 5 * time.Minute
+
+// DefaultIdle is the legacy alias for DefaultBusyIdle (tests / older call sites).
+const DefaultIdle = DefaultBusyIdle
 
 // CampGrace is a faster path when "/camp" is seen in the log. Classic EQ camps
 // take ~30s and usually write no final "logged out" line; we expire ~35s after
@@ -29,27 +36,30 @@ const (
 )
 
 // Watcher tails eqlog_<Character>_*.txt and tracks in-world characters.
-// presence drives SSO heartbeats; busy drives local login blocking (stricter).
+// presence drives SSO heartbeats (longer quiet-zone tolerance); busy drives
+// local login blocking (stricter / shorter).
 type Watcher struct {
-	LogsDir  string
-	mu       sync.Mutex
-	presence map[string]time.Time // character -> SSO heartbeat presence expiry
-	busy     map[string]time.Time // character -> local account busy expiry
-	camping  map[string]bool      // character currently camping out
-	logPath  map[string]string    // character -> eqlog path (for mtime gate)
-	idle     time.Duration
-	prev     map[string]struct{} // last Poll snapshot (for gone detection)
+	LogsDir      string
+	mu           sync.Mutex
+	presence     map[string]time.Time // character -> SSO heartbeat presence expiry
+	busy         map[string]time.Time // character -> local account busy expiry
+	camping      map[string]bool      // character currently camping out
+	logPath      map[string]string    // character -> eqlog path (for mtime gate)
+	presenceIdle time.Duration
+	busyIdle     time.Duration
+	prev         map[string]struct{} // last Poll snapshot (for gone detection)
 }
 
 func New(logsDir string) *Watcher {
 	return &Watcher{
-		LogsDir:  logsDir,
-		presence: make(map[string]time.Time),
-		busy:     make(map[string]time.Time),
-		camping:  make(map[string]bool),
-		logPath:  make(map[string]string),
-		idle:     DefaultIdle,
-		prev:     make(map[string]struct{}),
+		LogsDir:      logsDir,
+		presence:     make(map[string]time.Time),
+		busy:         make(map[string]time.Time),
+		camping:      make(map[string]bool),
+		logPath:      make(map[string]string),
+		presenceIdle: DefaultPresenceIdle,
+		busyIdle:     DefaultBusyIdle,
+		prev:         make(map[string]struct{}),
 	}
 }
 
@@ -57,14 +67,14 @@ func New(logsDir string) *Watcher {
 func (w *Watcher) OnlineNames() []string {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return w.namesLocked(w.presence, time.Now())
+	return w.presenceNamesLocked(time.Now())
 }
 
 // BusyNames returns characters that should block local login on their account.
 func (w *Watcher) BusyNames() []string {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return w.namesLocked(w.busy, time.Now())
+	return w.busyNamesLocked(time.Now())
 }
 
 // Poll returns current presence names and any that went offline since the last Poll.
@@ -72,7 +82,7 @@ func (w *Watcher) Poll() (online []string, gone []string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	now := time.Now()
-	online = w.namesLocked(w.presence, now)
+	online = w.presenceNamesLocked(now)
 	cur := make(map[string]struct{}, len(online))
 	for _, name := range online {
 		cur[name] = struct{}{}
@@ -86,30 +96,56 @@ func (w *Watcher) Poll() (online []string, gone []string) {
 	return online, gone
 }
 
-func (w *Watcher) namesLocked(m map[string]time.Time, now time.Time) []string {
+func (w *Watcher) presenceNamesLocked(now time.Time) []string {
+	w.busyNamesLocked(now) // prune busy independently
 	var out []string
-	for name, exp := range m {
-		if now.After(exp) {
-			w.clearCharacterLocked(name)
+	for name := range w.presence {
+		if w.staleLocked(w.presence, name, w.presenceIdle, now) {
+			w.clearPresenceLocked(name)
 			continue
-		}
-		if path := w.logPath[name]; path != "" {
-			if st, err := os.Stat(path); err == nil {
-				if now.Sub(st.ModTime()) > w.idle {
-					w.clearCharacterLocked(name)
-					continue
-				}
-			}
 		}
 		out = append(out, name)
 	}
 	return out
 }
 
-func (w *Watcher) clearCharacterLocked(name string) {
+func (w *Watcher) busyNamesLocked(now time.Time) []string {
+	var out []string
+	for name := range w.busy {
+		if w.staleLocked(w.busy, name, w.busyIdle, now) {
+			delete(w.busy, name)
+			delete(w.camping, name)
+			continue
+		}
+		out = append(out, name)
+	}
+	return out
+}
+
+func (w *Watcher) staleLocked(m map[string]time.Time, name string, idle time.Duration, now time.Time) bool {
+	exp, ok := m[name]
+	if !ok {
+		return true
+	}
+	if now.After(exp) {
+		return true
+	}
+	if path := w.logPath[name]; path != "" {
+		if st, err := os.Stat(path); err == nil && now.Sub(st.ModTime()) > idle {
+			return true
+		}
+	}
+	return false
+}
+
+func (w *Watcher) clearPresenceLocked(name string) {
 	delete(w.presence, name)
 	delete(w.busy, name)
 	delete(w.camping, name)
+}
+
+func (w *Watcher) clearCharacterLocked(name string) {
+	w.clearPresenceLocked(name)
 }
 
 func (w *Watcher) noteLogPathLocked(char, path string) {
@@ -141,16 +177,19 @@ func (w *Watcher) SetOnlineForTest(character string) {
 		w.camping = make(map[string]bool)
 	}
 	delete(w.camping, character)
-	exp := time.Now().Add(w.idle)
-	w.presence[character] = exp
-	w.busy[character] = exp
+	now := time.Now()
+	w.presence[character] = now.Add(w.presenceIdle)
+	w.busy[character] = now.Add(w.busyIdle)
 }
 
 func (w *Watcher) Run(ctx context.Context) {
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
 	offsets := map[string]int64{}
 	seeded := map[string]bool{}
+	// Immediate pass so restart recovery does not wait for the first ticker.
+	w.scan(offsets, seeded)
+
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -189,9 +228,9 @@ func (w *Watcher) scan(offsets map[string]int64, seeded map[string]bool) {
 		if !seeded[path] {
 			seeded[path] = true
 			offsets[path] = st.Size()
-			// If the log is actively being written, inspect the recent tail once so
-			// characters already in-game before the GUI started still get heartbeats.
-			if st.Size() > 0 && now.Sub(st.ModTime()) <= w.idle {
+			// Quiet zones still rewrite occasionally; accept recently-touched logs
+			// within the presence window so restart recovery works while AFK.
+			if st.Size() > 0 && now.Sub(st.ModTime()) <= w.presenceIdle {
 				w.applyRecentLogTail(char, path, st.Size(), now)
 			}
 			continue
@@ -224,12 +263,16 @@ func (w *Watcher) scan(offsets map[string]int64, seeded map[string]bool) {
 }
 
 func (w *Watcher) expireStaleLocked(char string, now, mod time.Time) {
-	stale := func(m map[string]time.Time) bool {
-		exp, ok := m[char]
-		return ok && (now.After(exp) || now.Sub(mod) > w.idle)
+	if exp, ok := w.busy[char]; ok {
+		if now.After(exp) || now.Sub(mod) > w.busyIdle {
+			delete(w.busy, char)
+			delete(w.camping, char)
+		}
 	}
-	if stale(w.presence) || stale(w.busy) {
-		w.clearCharacterLocked(char)
+	if exp, ok := w.presence[char]; ok {
+		if now.After(exp) || now.Sub(mod) > w.presenceIdle {
+			w.clearPresenceLocked(char)
+		}
 	}
 }
 
@@ -275,13 +318,15 @@ func (w *Watcher) applyLogChunk(char, text string, now time.Time) {
 			continue
 		}
 		ts, hasTS := parseLogLineTime(line)
-		recent := hasTS && logTimeRecent(ts, now, w.idle)
+		presenceRecent := hasTS && logTimeRecent(ts, now, w.presenceIdle)
+		busyRecent := hasTS && logTimeRecent(ts, now, w.busyIdle)
 
 		switch {
 		case strings.Contains(line, lineCampPrepare):
-			if !recent {
+			if !presenceRecent {
 				continue
 			}
+			// Camp is a strong offline signal — keep the short grace on both maps.
 			w.camping[char] = true
 			exp := now.Add(CampGrace)
 			w.presence[char] = exp
@@ -289,29 +334,31 @@ func (w *Watcher) applyLogChunk(char, text string, now time.Time) {
 			return
 
 		case strings.Contains(line, lineCampAbandon):
-			if !recent {
+			if !presenceRecent {
 				continue
 			}
 			delete(w.camping, char)
-			exp := now.Add(w.idle)
-			w.presence[char] = exp
-			w.busy[char] = exp
+			w.presence[char] = now.Add(w.presenceIdle)
+			if busyRecent {
+				w.busy[char] = now.Add(w.busyIdle)
+			}
 
 		case strings.Contains(line, lineWelcome), strings.Contains(line, lineEntered):
-			if !recent {
+			if !presenceRecent {
 				continue
 			}
 			delete(w.camping, char)
-			exp := now.Add(w.idle)
-			w.presence[char] = exp
-			w.busy[char] = exp
+			w.presence[char] = now.Add(w.presenceIdle)
+			if busyRecent {
+				w.busy[char] = now.Add(w.busyIdle)
+			}
 
 		default:
-			if w.camping[char] || !recent {
+			if w.camping[char] || !presenceRecent {
 				continue
 			}
-			// Fresh combat/chat marks presence for heartbeats but does not block login.
-			w.presence[char] = now.Add(w.idle)
+			// Quiet-zone combat/chat refreshes web presence only.
+			w.presence[char] = now.Add(w.presenceIdle)
 		}
 	}
 }
