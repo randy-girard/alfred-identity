@@ -28,29 +28,32 @@ func TestOnlineCharactersIdle(t *testing.T) {
 	w := New(t.TempDir())
 	w.idle = time.Minute
 	now := time.Now()
-	w.online["Hero"] = now.Add(time.Minute)
-	w.online["Idle"] = now.Add(-time.Second)
+	w.presence["Hero"] = now.Add(time.Minute)
+	w.presence["Idle"] = now.Add(-time.Second)
 	got := w.OnlineCharacters()
 	if len(got) != 1 || got[0] != "Hero" {
 		t.Fatalf("%#v", got)
 	}
-	if _, ok := w.online["Idle"]; ok {
+	if _, ok := w.presence["Idle"]; ok {
 		t.Fatal("Idle should be pruned")
 	}
 }
 
-func TestScanSkipsHistoricalContent(t *testing.T) {
+func TestScanSkipsStaleHistoricalContent(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "eqlog_Tank_server.txt")
-	if err := os.WriteFile(path, []byte(eqLogLine("Welcome to EverQuest!")), 0o600); err != nil {
+	oldTS := time.Now().Add(-2 * time.Minute).Format(eqTimeLayout)
+	if err := os.WriteFile(path, []byte("["+oldTS+"] Welcome to EverQuest!\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	old := time.Now().Add(-2 * time.Minute)
+	_ = os.Chtimes(path, old, old)
 	w := New(dir)
 	offsets := map[string]int64{}
 	seeded := map[string]bool{}
 	w.scan(offsets, seeded)
 	if len(w.OnlineCharacters()) != 0 {
-		t.Fatalf("historical welcome must not mark online: %#v", w.OnlineCharacters())
+		t.Fatalf("stale historical welcome must not mark online: %#v", w.OnlineCharacters())
 	}
 	if offsets[path] == 0 {
 		t.Fatal("expected tail offset seeded")
@@ -66,6 +69,53 @@ func TestScanSkipsHistoricalContent(t *testing.T) {
 	online := w.OnlineCharacters()
 	if len(online) != 1 || online[0] != "Tank" {
 		t.Fatalf("%#v", online)
+	}
+}
+
+func TestScanRecoversActiveSessionOnStartup(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "eqlog_Veseelbox_server.txt")
+	body := eqLogLine("You have entered West Freeport.") +
+		eqLogLine("You hit a gnoll for 1 point of damage.")
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w := New(dir)
+	offsets := map[string]int64{}
+	seeded := map[string]bool{}
+	w.scan(offsets, seeded)
+	online := w.OnlineNames()
+	if len(online) != 1 || online[0] != "Veseelbox" {
+		t.Fatalf("expected restart recovery presence: %#v", online)
+	}
+	busy := w.BusyNames()
+	if len(busy) != 1 || busy[0] != "Veseelbox" {
+		t.Fatalf("enter should also mark busy: %#v", busy)
+	}
+}
+
+func TestScanCombatMarksPresenceNotBusy(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "eqlog_Hero_server.txt")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w := New(dir)
+	offsets := map[string]int64{}
+	seeded := map[string]bool{}
+	w.scan(offsets, seeded) // seed empty
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.WriteString(eqLogLine("You hit a gnoll for 1 point of damage."))
+	_ = f.Close()
+	w.scan(offsets, seeded)
+	if len(w.OnlineNames()) != 1 {
+		t.Fatalf("combat should mark presence: %#v", w.OnlineNames())
+	}
+	if len(w.BusyNames()) != 0 {
+		t.Fatalf("combat alone must not block login: %#v", w.BusyNames())
 	}
 }
 
@@ -151,7 +201,7 @@ func TestScanCampPrepareExpiresWithoutActivityRefresh(t *testing.T) {
 	}
 
 	w.mu.Lock()
-	exp := w.online["Camper"]
+	exp := w.presence["Camper"]
 	camping := w.camping["Camper"]
 	w.mu.Unlock()
 	if !camping {
@@ -162,7 +212,7 @@ func TestScanCampPrepareExpiresWithoutActivityRefresh(t *testing.T) {
 	}
 
 	w.mu.Lock()
-	w.online["Camper"] = time.Now().Add(-time.Second)
+	w.presence["Camper"] = time.Now().Add(-time.Second)
 	w.mu.Unlock()
 	online, gone := w.Poll()
 	if len(online) != 0 {

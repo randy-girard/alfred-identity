@@ -2,6 +2,7 @@ package logwatch
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,44 +25,54 @@ const (
 	lineEntered     = "You have entered"
 	lineCampPrepare = "It will take you about 30 seconds to prepare your camp."
 	lineCampAbandon = "You abandon your preparations to camp."
+	tailInspectMax  = 4096
 )
 
-// Watcher tails eqlog_<Character>_*.txt and tracks online characters.
+// Watcher tails eqlog_<Character>_*.txt and tracks in-world characters.
+// presence drives SSO heartbeats; busy drives local login blocking (stricter).
 type Watcher struct {
-	LogsDir string
-	mu      sync.Mutex
-	online  map[string]time.Time // character -> presence expiry
-	camping map[string]bool      // character currently camping out
-	logPath map[string]string    // character -> eqlog path (for mtime gate)
-	idle    time.Duration
-	prev    map[string]struct{} // last OnlineCharacters snapshot (for gone detection)
+	LogsDir  string
+	mu       sync.Mutex
+	presence map[string]time.Time // character -> SSO heartbeat presence expiry
+	busy     map[string]time.Time // character -> local account busy expiry
+	camping  map[string]bool      // character currently camping out
+	logPath  map[string]string    // character -> eqlog path (for mtime gate)
+	idle     time.Duration
+	prev     map[string]struct{} // last Poll snapshot (for gone detection)
 }
 
 func New(logsDir string) *Watcher {
 	return &Watcher{
-		LogsDir: logsDir,
-		online:  make(map[string]time.Time),
-		camping: make(map[string]bool),
-		logPath: make(map[string]string),
-		idle:    DefaultIdle,
-		prev:    make(map[string]struct{}),
+		LogsDir:  logsDir,
+		presence: make(map[string]time.Time),
+		busy:     make(map[string]time.Time),
+		camping:  make(map[string]bool),
+		logPath:  make(map[string]string),
+		idle:     DefaultIdle,
+		prev:     make(map[string]struct{}),
 	}
 }
 
-// OnlineNames returns characters still considered in-world (idle / camp / mtime applied).
+// OnlineNames returns characters with fresh log presence (for SSO heartbeats).
 func (w *Watcher) OnlineNames() []string {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return w.onlineNamesLocked(time.Now())
+	return w.namesLocked(w.presence, time.Now())
 }
 
-// Poll returns currently online names and any that went offline since the last Poll
-// (idle expiry or finished camp). Use from the heartbeat loop so SSO can clear presence.
+// BusyNames returns characters that should block local login on their account.
+func (w *Watcher) BusyNames() []string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.namesLocked(w.busy, time.Now())
+}
+
+// Poll returns current presence names and any that went offline since the last Poll.
 func (w *Watcher) Poll() (online []string, gone []string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	now := time.Now()
-	online = w.onlineNamesLocked(now)
+	online = w.namesLocked(w.presence, now)
 	cur := make(map[string]struct{}, len(online))
 	for _, name := range online {
 		cur[name] = struct{}{}
@@ -75,28 +86,29 @@ func (w *Watcher) Poll() (online []string, gone []string) {
 	return online, gone
 }
 
-func (w *Watcher) onlineNamesLocked(now time.Time) []string {
-	var online []string
-	for name, exp := range w.online {
+func (w *Watcher) namesLocked(m map[string]time.Time, now time.Time) []string {
+	var out []string
+	for name, exp := range m {
 		if now.After(exp) {
-			w.clearPresenceLocked(name)
+			w.clearCharacterLocked(name)
 			continue
 		}
 		if path := w.logPath[name]; path != "" {
 			if st, err := os.Stat(path); err == nil {
 				if now.Sub(st.ModTime()) > w.idle {
-					w.clearPresenceLocked(name)
+					w.clearCharacterLocked(name)
 					continue
 				}
 			}
 		}
-		online = append(online, name)
+		out = append(out, name)
 	}
-	return online
+	return out
 }
 
-func (w *Watcher) clearPresenceLocked(name string) {
-	delete(w.online, name)
+func (w *Watcher) clearCharacterLocked(name string) {
+	delete(w.presence, name)
+	delete(w.busy, name)
 	delete(w.camping, name)
 }
 
@@ -118,15 +130,20 @@ func (w *Watcher) SetOnlineForTest(character string) {
 		return
 	}
 	w.mu.Lock()
-	if w.online == nil {
-		w.online = make(map[string]time.Time)
+	defer w.mu.Unlock()
+	if w.presence == nil {
+		w.presence = make(map[string]time.Time)
+	}
+	if w.busy == nil {
+		w.busy = make(map[string]time.Time)
 	}
 	if w.camping == nil {
 		w.camping = make(map[string]bool)
 	}
 	delete(w.camping, character)
-	w.online[character] = time.Now().Add(w.idle)
-	w.mu.Unlock()
+	exp := time.Now().Add(w.idle)
+	w.presence[character] = exp
+	w.busy[character] = exp
 }
 
 func (w *Watcher) Run(ctx context.Context) {
@@ -170,26 +187,26 @@ func (w *Watcher) scan(offsets map[string]int64, seeded map[string]bool) {
 		w.mu.Unlock()
 
 		if !seeded[path] {
-			// Tail-only: ignore historical session lines already on disk.
 			seeded[path] = true
 			offsets[path] = st.Size()
+			// If the log is actively being written, inspect the recent tail once so
+			// characters already in-game before the GUI started still get heartbeats.
+			if st.Size() > 0 && now.Sub(st.ModTime()) <= w.idle {
+				w.applyRecentLogTail(char, path, st.Size(), now)
+			}
 			continue
 		}
 
 		prev := offsets[path]
 		if st.Size() < prev {
 			w.mu.Lock()
-			w.clearPresenceLocked(char)
+			w.clearCharacterLocked(char)
 			w.mu.Unlock()
 			prev = 0
 		}
 		if st.Size() == prev {
 			w.mu.Lock()
-			if exp, ok := w.online[char]; ok && now.After(exp) {
-				w.clearPresenceLocked(char)
-			} else if ok && now.Sub(st.ModTime()) > w.idle {
-				w.clearPresenceLocked(char)
-			}
+			w.expireStaleLocked(char, now, st.ModTime())
 			w.mu.Unlock()
 			continue
 		}
@@ -206,14 +223,47 @@ func (w *Watcher) scan(offsets map[string]int64, seeded map[string]bool) {
 	}
 }
 
+func (w *Watcher) expireStaleLocked(char string, now, mod time.Time) {
+	stale := func(m map[string]time.Time) bool {
+		exp, ok := m[char]
+		return ok && (now.After(exp) || now.Sub(mod) > w.idle)
+	}
+	if stale(w.presence) || stale(w.busy) {
+		w.clearCharacterLocked(char)
+	}
+}
+
+func (w *Watcher) applyRecentLogTail(char, path string, size int64, now time.Time) {
+	start := int64(0)
+	if size > tailInspectMax {
+		start = size - tailInspectMax
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	if _, err := f.Seek(start, io.SeekStart); err != nil {
+		return
+	}
+	buf := make([]byte, size-start)
+	if _, err := io.ReadFull(f, buf); err != nil && err != io.ErrUnexpectedEOF {
+		return
+	}
+	w.applyLogChunk(char, string(buf), now)
+}
+
 func (w *Watcher) applyLogChunk(char, text string, now time.Time) {
 	if text == "" {
 		return
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if w.online == nil {
-		w.online = make(map[string]time.Time)
+	if w.presence == nil {
+		w.presence = make(map[string]time.Time)
+	}
+	if w.busy == nil {
+		w.busy = make(map[string]time.Time)
 	}
 	if w.camping == nil {
 		w.camping = make(map[string]bool)
@@ -233,7 +283,9 @@ func (w *Watcher) applyLogChunk(char, text string, now time.Time) {
 				continue
 			}
 			w.camping[char] = true
-			w.online[char] = now.Add(CampGrace)
+			exp := now.Add(CampGrace)
+			w.presence[char] = exp
+			w.busy[char] = exp
 			return
 
 		case strings.Contains(line, lineCampAbandon):
@@ -241,20 +293,25 @@ func (w *Watcher) applyLogChunk(char, text string, now time.Time) {
 				continue
 			}
 			delete(w.camping, char)
-			w.online[char] = now.Add(w.idle)
+			exp := now.Add(w.idle)
+			w.presence[char] = exp
+			w.busy[char] = exp
 
 		case strings.Contains(line, lineWelcome), strings.Contains(line, lineEntered):
 			if !recent {
 				continue
 			}
 			delete(w.camping, char)
-			w.online[char] = now.Add(w.idle)
+			exp := now.Add(w.idle)
+			w.presence[char] = exp
+			w.busy[char] = exp
 
 		default:
-			if _, ok := w.online[char]; !ok || w.camping[char] || !recent {
+			if w.camping[char] || !recent {
 				continue
 			}
-			w.online[char] = now.Add(w.idle)
+			// Fresh combat/chat marks presence for heartbeats but does not block login.
+			w.presence[char] = now.Add(w.idle)
 		}
 	}
 }

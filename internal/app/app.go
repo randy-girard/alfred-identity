@@ -53,6 +53,8 @@ func (a *App) confirmDialog(title, message, accept string) (bool, error) {
 	if a.ctx == nil {
 		return true, nil
 	}
+	a.activateForNativeDialog()
+	a.showWindowForDialog()
 	cancel := "Cancel"
 	sel, err := runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
 		Type:          runtime.QuestionDialog,
@@ -189,6 +191,7 @@ func (a *App) heartbeatLoop(ctx context.Context) {
 	t := time.NewTicker(5 * time.Second)
 	defer t.Stop()
 	var lastOnlineHB time.Time
+	var wasConnected bool
 	for {
 		select {
 		case <-ctx.Done():
@@ -198,22 +201,51 @@ func (a *App) heartbeatLoop(ctx context.Context) {
 				continue
 			}
 			online, gone := a.watcher.Poll()
-			if a.sso == nil || !a.sso.Connected() {
+			connected := a.sso != nil && a.sso.Connected()
+			if !connected {
+				wasConnected = false
 				continue
 			}
+			// After SSO (re)connect, push presence immediately so a restart while
+			// already in-game reappears in the web UI without waiting ~20s.
+			justConnected := !wasConnected
+			wasConnected = true
 			for _, ch := range gone {
 				_ = a.sso.Heartbeat(ctx, ch, true)
 			}
-			// Keep online heartbeats ~20s (p99-login-proxy interval); check gone every tick.
-			if time.Since(lastOnlineHB) < 20*time.Second {
+			if !justConnected && time.Since(lastOnlineHB) < 20*time.Second {
 				continue
 			}
 			lastOnlineHB = time.Now()
-			for _, ch := range online {
-				_ = a.sso.Heartbeat(ctx, ch, false)
-			}
+			a.syncSSOPresence(ctx, online)
 		}
 	}
+}
+
+// syncSSOPresence sends online heartbeats for characters seen in EQ logs.
+// The backend only records presence when the character is on an allowed SSO account.
+func (a *App) syncSSOPresence(ctx context.Context, online []string) {
+	if a.sso == nil || !a.sso.Connected() {
+		return
+	}
+	for _, ch := range online {
+		_ = a.sso.Heartbeat(ctx, ch, false)
+	}
+}
+
+func (a *App) syncSSOPresenceFromLogs() {
+	if a.watcher == nil || a.ctx == nil {
+		return
+	}
+	a.syncSSOPresence(a.ctx, a.watcher.OnlineNames())
+}
+
+func (a *App) connectSSO(wsURL, token string) error {
+	if err := a.sso.Connect(a.ctx, wsURL, token, "gui/"+Version); err != nil {
+		return err
+	}
+	a.syncSSOPresenceFromLogs()
+	return nil
 }
 
 // ssoReconnectLoop keeps the last active SSO source connected when mode is login_sso.
@@ -280,7 +312,7 @@ func (a *App) ensureActiveSSOLocked() {
 		a.log.Debug("sso reconnect", "err", err, "source", src.ID)
 		return
 	}
-	if err := a.sso.Connect(a.ctx, wsURL, src.Token, "gui/"+Version); err != nil {
+	if err := a.connectSSO(wsURL, src.Token); err != nil {
 		a.log.Debug("sso reconnect", "err", err, "source", src.ID)
 	} else {
 		a.log.Info("sso connected", "source", src.ID, "name", src.Name)
@@ -292,7 +324,7 @@ func (a *App) busyLocal() map[string]bool {
 	if a.watcher == nil || a.local == nil {
 		return busy
 	}
-	for _, ch := range a.watcher.OnlineNames() {
+	for _, ch := range a.watcher.BusyNames() {
 		for _, c := range a.local.Characters {
 			if strings.EqualFold(c.Name, ch) {
 				busy[strings.ToLower(c.Account)] = true
@@ -980,17 +1012,6 @@ func (a *App) DeleteLocalAccount(name string) error {
 	if name == "" {
 		return fmt.Errorf("account name required")
 	}
-	ok, err := a.confirmDialog(
-		"Delete local account",
-		fmt.Sprintf("Delete local account “%s”? This cannot be undone.", name),
-		"Delete",
-	)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return nil
-	}
 	_ = a.local.Load()
 	return a.local.DeleteAccount(name)
 }
@@ -1339,7 +1360,7 @@ func (a *App) SaveSource(src sources.Source) (SourceDTO, error) {
 			if err != nil {
 				return sourceDTO(saved), err
 			}
-			if err := a.sso.Connect(a.ctx, wsURL, saved.Token, "gui/"+Version); err != nil {
+			if err := a.connectSSO(wsURL, saved.Token); err != nil {
 				return sourceDTO(saved), err
 			}
 		}
@@ -1394,7 +1415,7 @@ func (a *App) SetActiveSource(id string) error {
 	if err != nil {
 		return err
 	}
-	return a.sso.Connect(a.ctx, wsURL, src.Token, "gui/"+Version)
+	return a.connectSSO(wsURL, src.Token)
 }
 
 func (a *App) DeleteSource(id string) error {
@@ -1436,7 +1457,7 @@ func (a *App) DeleteSource(id string) error {
 	if err != nil {
 		return err
 	}
-	return a.sso.Connect(a.ctx, wsURL, src.Token, "gui/"+Version)
+	return a.connectSSO(wsURL, src.Token)
 }
 
 func (a *App) SetConnectionMode(mode string) error {
