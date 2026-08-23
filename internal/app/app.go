@@ -188,10 +188,11 @@ func (a *App) startWatcher(eqDir string) {
 }
 
 func (a *App) heartbeatLoop(ctx context.Context) {
-	t := time.NewTicker(5 * time.Second)
+	t := time.NewTicker(2 * time.Second)
 	defer t.Stop()
 	var lastOnlineHB time.Time
 	var wasConnected bool
+	prevOnline := map[string]struct{}{}
 	for {
 		select {
 		case <-ctx.Done():
@@ -204,20 +205,33 @@ func (a *App) heartbeatLoop(ctx context.Context) {
 			connected := a.sso != nil && a.sso.Connected()
 			if !connected {
 				wasConnected = false
+				prevOnline = map[string]struct{}{}
 				continue
 			}
-			// After SSO (re)connect, push presence immediately so a restart while
-			// already in-game reappears in the web UI without waiting ~20s.
 			justConnected := !wasConnected
 			wasConnected = true
 			for _, ch := range gone {
 				_ = a.sso.Heartbeat(ctx, ch, true)
+				delete(prevOnline, ch)
 			}
-			if !justConnected && time.Since(lastOnlineHB) < 20*time.Second {
+			// Push as soon as a character appears (or SSO reconnects); refresh ~20s after that.
+			appeared := false
+			for _, ch := range online {
+				if _, ok := prevOnline[ch]; !ok {
+					appeared = true
+					break
+				}
+			}
+			if !justConnected && !appeared && time.Since(lastOnlineHB) < 20*time.Second {
 				continue
 			}
 			lastOnlineHB = time.Now()
 			a.syncSSOPresence(ctx, online)
+			next := make(map[string]struct{}, len(online))
+			for _, ch := range online {
+				next[ch] = struct{}{}
+			}
+			prevOnline = next
 		}
 	}
 }
@@ -244,7 +258,16 @@ func (a *App) connectSSO(wsURL, token string) error {
 	if err := a.sso.Connect(a.ctx, wsURL, token, "gui/"+Version); err != nil {
 		return err
 	}
+	// Watcher may still be catching up; sync now and again shortly.
 	a.syncSSOPresenceFromLogs()
+	go func() {
+		select {
+		case <-a.ctx.Done():
+			return
+		case <-time.After(1500 * time.Millisecond):
+			a.syncSSOPresenceFromLogs()
+		}
+	}()
 	return nil
 }
 
