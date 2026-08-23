@@ -415,6 +415,7 @@ export default function App() {
   const [updateStatus, setUpdateStatus] = useState(null)
   const [updateChecking, setUpdateChecking] = useState(false)
   const [updateInstalling, setUpdateInstalling] = useState(false)
+  const [deleteLocalConfirm, setDeleteLocalConfirm] = useState(null)
   const [theme, setTheme] = useState(() => readStoredTheme())
   const [logs, setLogs] = useState([])
   const logEndRef = useRef(null)
@@ -1320,10 +1321,7 @@ export default function App() {
                                     type="button"
                                     className="secondary"
                                     disabled={busy}
-                                    onClick={() => run(async () => {
-                                      await DeleteLocalAccount(acc.name)
-                                      if (localForm.name === acc.name) closeLocalModal()
-                                    })}
+                                    onClick={() => setDeleteLocalConfirm(acc.name)}
                                   >
                                     Remove
                                   </button>
@@ -1954,6 +1952,41 @@ export default function App() {
             <div className="modal-actions">
               <button type="button" className="secondary" disabled={busy} onClick={closeImportModal}>
                 Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteLocalConfirm && (
+        <div className="modal-backdrop" onClick={() => setDeleteLocalConfirm(null)} role="presentation">
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-local-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="delete-local-title">Delete local account</h2>
+            <p className="hint">
+              Delete local account <strong>{deleteLocalConfirm}</strong>? This cannot be undone.
+            </p>
+            <div className="modal-actions">
+              <button type="button" className="secondary" disabled={busy} onClick={() => setDeleteLocalConfirm(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="secondary danger"
+                disabled={busy}
+                onClick={() => run(async () => {
+                  const name = deleteLocalConfirm
+                  await DeleteLocalAccount(name)
+                  setDeleteLocalConfirm(null)
+                  if (localForm.name === name) closeLocalModal()
+                })}
+              >
+                Delete
               </button>
             </div>
           </div>
