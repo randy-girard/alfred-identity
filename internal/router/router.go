@@ -66,9 +66,6 @@ func (r *Router) HandleLoginPacket(ctx context.Context, login *protocol.LoginPac
 		}
 		return Result{Decision: DecisionLocal, Packet: out}
 	}
-	if local.Matched && local.AllBusy && !local.ViaAlias {
-		return Result{Decision: DecisionFail, Message: "local account busy"}
-	}
 	if local.Matched && local.AllBusy && local.ViaAlias {
 		return Result{Decision: DecisionFail, Message: "local alias busy; not found on SSO"}
 	}

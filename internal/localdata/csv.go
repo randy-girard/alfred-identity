@@ -317,6 +317,14 @@ func (s *Store) ResolveLogin(typed string, busy map[string]bool) ResolveResult {
 		viaAlias = true
 	}
 
+	// Direct account / character login: never block on "online". EQ will report
+	// already-logged-in if the session is truly occupied.
+	if len(cands) == 1 {
+		chosen := cands[0]
+		return ResolveResult{Matched: true, ViaAlias: viaAlias, Candidates: cands, Chosen: &chosen}
+	}
+
+	// Multi-account alias pool: rotate to a free account (same idea as SSO tags).
 	var free []Account
 	for _, a := range cands {
 		if !busy[strings.ToLower(a.Name)] {
@@ -324,11 +332,7 @@ func (s *Store) ResolveLogin(typed string, busy map[string]bool) ResolveResult {
 		}
 	}
 	if len(free) == 0 {
-		err := ""
-		if !viaAlias {
-			err = "local account busy"
-		}
-		return ResolveResult{Matched: true, ViaAlias: viaAlias, Candidates: cands, AllBusy: true, Error: err}
+		return ResolveResult{Matched: true, ViaAlias: true, Candidates: cands, AllBusy: true}
 	}
 	chosen := free[0]
 	for _, a := range free[1:] {
@@ -336,7 +340,7 @@ func (s *Store) ResolveLogin(typed string, busy map[string]bool) ResolveResult {
 			chosen = a
 		}
 	}
-	return ResolveResult{Matched: true, ViaAlias: viaAlias, Candidates: cands, Chosen: &chosen}
+	return ResolveResult{Matched: true, ViaAlias: true, Candidates: cands, Chosen: &chosen}
 }
 
 func DefaultPaths(dir string) (accounts, characters string) {

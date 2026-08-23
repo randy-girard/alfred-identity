@@ -64,9 +64,10 @@ func TestResolveLoginAliasAndBusy(t *testing.T) {
 	if !res.Matched || !res.AllBusy || res.Chosen != nil {
 		t.Fatalf("busy alias %#v", res)
 	}
+	// Direct account login is never blocked by online/busy presence.
 	res = s.ResolveLogin("acc1", map[string]bool{"acc1": true})
-	if !res.Matched || !res.AllBusy || res.Error == "" {
-		t.Fatalf("busy exact %#v", res)
+	if !res.Matched || res.Chosen == nil || res.Chosen.Name != "acc1" || res.AllBusy {
+		t.Fatalf("direct busy should still choose account %#v", res)
 	}
 	res = s.ResolveLogin("missing", nil)
 	if res.Matched {

@@ -118,7 +118,7 @@ Set on **Connections** (or the status bar at the bottom):
 | **Local** | Personal accounts on this machine (CSV). Checked **before** SSO when the typed login name matches. **Add account**, **Import CSV…**, **Export CSV…**, or import from a **P99 Login Proxy** install. |
 | **Shared** | (When SSO connected) Outgoing shares you granted and accounts others shared with you |
 
-**Login behavior:** type an account name, alias, tag, or character name at the EverQuest login screen. Local names win over SSO. Tags cycle shared guild accounts; aliases belong to one account.
+**Login behavior:** type an account name, alias, tag, or character name at the EverQuest login screen. Local names win over SSO. Direct account/character logins are never blocked by “online” presence (EQ shows already-logged-in if needed). Shared **tags** (SSO) and multi-account **aliases** (local) skip busy accounts so you rotate to a free box.
 
 **Share** (Local tab): with SSO connected, copy a local account to selected Discord users as a private SSO share without giving up your local copy.
 

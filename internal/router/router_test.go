@@ -67,7 +67,7 @@ func TestHandleLoginPacketLocal(t *testing.T) {
 	}
 }
 
-func TestHandleLoginPacketBusy(t *testing.T) {
+func TestHandleLoginPacketBusyStillAllowsDirectLocal(t *testing.T) {
 	dir := t.TempDir()
 	store := &localdata.Store{
 		AccountsPath:   filepath.Join(dir, "a.csv"),
@@ -81,8 +81,8 @@ func TestHandleLoginPacketBusy(t *testing.T) {
 		},
 	}
 	res := r.HandleLoginPacket(context.Background(), testLoginPacket(t))
-	if res.Decision != DecisionFail || res.Message == "" {
-		t.Fatalf("%+v", res)
+	if res.Decision != DecisionLocal || len(res.Packet) == 0 {
+		t.Fatalf("direct login should not be blocked by busy: %+v", res)
 	}
 }
 
@@ -197,8 +197,8 @@ func TestHandleLoginPacketLocalBusyAndSSOErrors(t *testing.T) {
 	login := testLoginPacket(t)
 	login.Username = "solo"
 	res := r.HandleLoginPacket(context.Background(), login)
-	if res.Decision != DecisionFail || res.Message != "local account busy" {
-		t.Fatalf("busy: %+v", res)
+	if res.Decision != DecisionLocal {
+		t.Fatalf("direct busy should allow local login: %+v", res)
 	}
 
 	fake := &fakeSSO{
