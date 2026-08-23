@@ -410,6 +410,7 @@ export namespace sso {
 	    disabled: boolean;
 	    elevated: boolean;
 	    required_role_id: string;
+	    required_role_ids: string[];
 	    required_user_id: number;
 	    group_ids: number[];
 	    restricted: boolean;
@@ -430,6 +431,7 @@ export namespace sso {
 	        this.disabled = source["disabled"];
 	        this.elevated = source["elevated"];
 	        this.required_role_id = source["required_role_id"];
+	        this.required_role_ids = source["required_role_ids"];
 	        this.required_user_id = source["required_user_id"];
 	        this.group_ids = source["group_ids"];
 	        this.restricted = source["restricted"];
