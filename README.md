@@ -77,10 +77,10 @@ Open `coverage/index.html` in a browser.
 
 | Platform | Where the app lives | Reopen window | Quit |
 |----------|---------------------|---------------|------|
-| **macOS** | Menu bar **AI** item; Dock icon only while window is open | **AI** → **Show Window**, or click Dock icon | **AI** → **Exit**, or app menu **Quit** |
+| **macOS** | Menu bar Alfred icon; Dock icon only while window is open | Click the menu bar icon → **Show Window**, or click Dock icon | Menu bar icon → **Exit**, or app menu **Quit** |
 | **Windows / Linux** | System tray icon; taskbar while window is open | Tray → **Show Window** | Tray → **Exit** |
 
-**Check for updates** is also on the menu bar / tray menu (macOS: **AI** → **Check for Updates**).
+**Check for updates** is also on the menu bar / tray menu (macOS: click the Alfred icon → **Check for Updates**).
 
 ### First-time setup
 
@@ -163,7 +163,7 @@ Example `config.json` fragment:
     {
       "id": "default",
       "name": "Local daemon",
-      "host": "127.0.0.1:8181",
+      "host": "identity.example.com:443",
       "token": "paste-token-here"
     }
   ],

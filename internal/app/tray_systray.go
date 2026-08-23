@@ -68,7 +68,7 @@ func (a *App) onTrayReady() {
 	if len(trayIcon) > 0 {
 		systray.SetIcon(trayIcon)
 	}
-	systray.SetTitle(AppName)
+	systray.SetTitle("")
 	systray.SetTooltip(AppName)
 	mShow := systray.AddMenuItem("Show Window", "Show "+AppName)
 	mUpdates := systray.AddMenuItem("Check for Updates", "Check for a new release")

@@ -492,6 +492,16 @@ button.secondary.danger:hover:not(:disabled) {
   font-size: 0.85rem;
 }
 
+.data-table .col-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.data-table .col-host.col-ellipsis {
+  max-width: 14rem;
+}
+
 .data-table .col-actions {
   white-space: nowrap;
   width: 1%;
@@ -601,6 +611,31 @@ button.secondary.danger:hover:not(:disabled) {
 
 .modal.modal-wide {
   width: min(36rem, 100%);
+}
+
+.modal.modal-sources {
+  width: min(46rem, 100%);
+}
+
+.modal .table-wrap {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.modal .data-table {
+  table-layout: fixed;
+}
+
+.modal .data-table .col-host {
+  width: auto;
+}
+
+.modal .data-table .col-token {
+  width: 4.75rem;
+}
+
+.modal .data-table .col-actions {
+  width: 11rem;
 }
 
 .modal h2 {

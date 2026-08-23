@@ -40,7 +40,7 @@ static void AIStatusItemCreate(NSString *tooltip, NSData *pngData) {
 		andEventID:kAEReopenApplication];
 
 	NSStatusItem *item = [[NSStatusBar systemStatusBar]
-		statusItemWithLength:NSVariableStatusItemLength];
+		statusItemWithLength:NSSquareStatusItemLength];
 	gItem = item;
 
 	NSStatusBarButton *btn = item.button;
@@ -57,19 +57,17 @@ static void AIStatusItemCreate(NSString *tooltip, NSData *pngData) {
 	if (pngData.length > 0) {
 		image = [[NSImage alloc] initWithData:pngData];
 		if (image && image.size.width > 0) {
-			image.template = YES;
+			image.template = NO;
 			image.size = NSMakeSize(18, 18);
 		} else {
 			image = nil;
 		}
 	}
 
-	// Prefer a clear title so the item is always visible in the menu bar.
-	// Image is optional decoration; never rely on it alone.
 	if (image) {
 		btn.image = image;
-		btn.title = @"AI";
-		btn.imagePosition = NSImageLeft;
+		btn.title = @"";
+		btn.imagePosition = NSImageOnly;
 	} else {
 		btn.image = nil;
 		btn.title = @"AI";
