@@ -159,8 +159,7 @@ func (a *App) Startup(ctx context.Context) {
 	a.hbCancel = cancel
 	go a.heartbeatLoop(hbCtx)
 	go a.ssoReconnectLoop(hbCtx)
-
-	go a.checkUpdateOnStartup()
+	go a.updateCheckLoop(hbCtx)
 }
 
 func (a *App) Shutdown(ctx context.Context) {
@@ -301,14 +300,41 @@ func (a *App) busyLocal() map[string]bool {
 	return busy
 }
 
-func (a *App) checkUpdateOnStartup() {
-	time.Sleep(2 * time.Second)
+const updateCheckInterval = 6 * time.Hour
+
+func (a *App) updateCheckLoop(ctx context.Context) {
+	// Initial check shortly after startup (same UX as before).
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(2 * time.Second):
+		a.runUpdateCheck(true)
+	}
+
+	t := time.NewTicker(updateCheckInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			// Periodic: refresh GUI banner/status only (no native dialog spam).
+			a.runUpdateCheck(false)
+		}
+	}
+}
+
+// runUpdateCheck fetches GitHub release info, pushes it to the UI, and optionally
+// shows the native "update available" dialog (startup / tray only).
+func (a *App) runUpdateCheck(offerDialog bool) {
 	info, err := a.CheckUpdate()
-	if err != nil || !info.UpdateAvailable {
+	if err != nil {
 		return
 	}
 	a.emitUpdateChecked(info)
-	a.presentUpdateCheck(info, true)
+	if offerDialog && info.UpdateAvailable {
+		a.presentUpdateCheck(info, true)
+	}
 }
 
 func (a *App) checkUpdateInteractive() {

@@ -422,6 +422,7 @@ export default function App() {
     if (!u) return
     setUpdateStatus(u)
     if (u.update_available) setUpdate(u)
+    else setUpdate(null)
   }, [])
 
   const checkForUpdates = useCallback(async () => {
