@@ -148,6 +148,20 @@ func (w *Watcher) clearCharacterLocked(name string) {
 	w.clearPresenceLocked(name)
 }
 
+func (w *Watcher) clearOtherCharactersLocked(keep string) {
+	for name := range w.presence {
+		if !strings.EqualFold(name, keep) {
+			delete(w.presence, name)
+		}
+	}
+	for name := range w.busy {
+		if !strings.EqualFold(name, keep) {
+			delete(w.busy, name)
+			delete(w.camping, name)
+		}
+	}
+}
+
 func (w *Watcher) noteLogPathLocked(char, path string) {
 	if w.logPath == nil {
 		w.logPath = make(map[string]string)
@@ -348,6 +362,7 @@ func (w *Watcher) applyLogChunk(char, text string, now time.Time) {
 				continue
 			}
 			delete(w.camping, char)
+			w.clearOtherCharactersLocked(char)
 			w.presence[char] = now.Add(w.presenceIdle)
 			if busyRecent {
 				w.busy[char] = now.Add(w.busyIdle)

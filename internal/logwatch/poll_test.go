@@ -97,3 +97,52 @@ func TestCampAbandonRestoresPresence(t *testing.T) {
 		t.Fatalf("should stay online after abandon: %v", w.OnlineNames())
 	}
 }
+
+func TestWelcomeOnNewCharacterClearsPrevious(t *testing.T) {
+	dir := t.TempDir()
+	pathA := filepath.Join(dir, "eqlog_FirstChar_server.txt")
+	pathB := filepath.Join(dir, "eqlog_SecondChar_server.txt")
+	if err := os.WriteFile(pathA, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(pathB, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w := New(dir)
+	w.presenceIdle = time.Minute
+	w.busyIdle = 30 * time.Second
+	offsets := map[string]int64{}
+	seeded := map[string]bool{}
+	w.scan(offsets, seeded)
+
+	appendLine := func(path, char, msg string) {
+		t.Helper()
+		f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = f.WriteString(eqLogLine(msg))
+		_ = f.Close()
+		w.scan(offsets, seeded)
+	}
+
+	appendLine(pathA, "FirstChar", "Welcome to EverQuest!")
+	online, gone := w.Poll()
+	if len(online) != 1 || online[0] != "FirstChar" || len(gone) != 0 {
+		t.Fatalf("first poll: online=%v gone=%v", online, gone)
+	}
+
+	appendLine(pathB, "SecondChar", "You have entered East Commonlands.")
+	names := w.OnlineNames()
+	if len(names) != 1 || names[0] != "SecondChar" {
+		t.Fatalf("expected only SecondChar online, got %v", names)
+	}
+
+	online, gone = w.Poll()
+	if len(online) != 1 || online[0] != "SecondChar" {
+		t.Fatalf("poll online=%v", online)
+	}
+	if len(gone) != 1 || gone[0] != "FirstChar" {
+		t.Fatalf("poll gone=%v want FirstChar", gone)
+	}
+}
