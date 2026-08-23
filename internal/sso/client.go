@@ -145,6 +145,8 @@ type Client struct {
 	adminWait   map[string]chan AdminResult
 	stateWait   []chan struct{}
 	connected   bool
+	// keepaliveEvery overrides the default ping interval when > 0 (tests).
+	keepaliveEvery time.Duration
 }
 
 func NewClient() *Client {
@@ -387,20 +389,26 @@ func (c *Client) Connect(parent context.Context, wsURL, token, clientVersion str
 	return nil
 }
 
-// keepaliveInterval is how often the client sends a ping while connected.
+// defaultKeepaliveInterval is how often the client sends a ping while connected.
 // Character heartbeats only fire when someone is online; without this, idle
 // sockets are often closed by reverse proxies around ~60s of silence.
-var keepaliveInterval = 25 * time.Second
+const defaultKeepaliveInterval = 25 * time.Second
 
-// SetKeepaliveIntervalForTest overrides the SSO ping interval. Returns restore.
-func SetKeepaliveIntervalForTest(d time.Duration) func() {
-	old := keepaliveInterval
-	keepaliveInterval = d
-	return func() { keepaliveInterval = old }
+// SetKeepaliveIntervalForTest sets this client's ping interval (call before Connect).
+func (c *Client) SetKeepaliveIntervalForTest(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.keepaliveEvery = d
 }
 
 func (c *Client) keepaliveLoop(ctx context.Context) {
-	t := time.NewTicker(keepaliveInterval)
+	c.mu.Lock()
+	interval := c.keepaliveEvery
+	c.mu.Unlock()
+	if interval <= 0 {
+		interval = defaultKeepaliveInterval
+	}
+	t := time.NewTicker(interval)
 	defer t.Stop()
 	for {
 		select {

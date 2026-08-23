@@ -292,8 +292,6 @@ func TestClientPingGetsPong(t *testing.T) {
 func TestKeepaliveLoopSendsPing(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	restore := SetKeepaliveIntervalForTest(40 * time.Millisecond)
-	defer restore()
 
 	pings := make(chan struct{}, 8)
 	wsURL, cleanup := startMockSSOServer(t, func(typ string, data []byte) map[string]any {
@@ -313,6 +311,7 @@ func TestKeepaliveLoopSendsPing(t *testing.T) {
 	defer cleanup()
 
 	c := NewClient()
+	c.SetKeepaliveIntervalForTest(40 * time.Millisecond)
 	if err := c.Connect(ctx, wsURL, "token", "gui/test"); err != nil {
 		t.Fatal(err)
 	}
