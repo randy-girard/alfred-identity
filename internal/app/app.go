@@ -185,17 +185,30 @@ func (a *App) startWatcher(eqDir string) {
 }
 
 func (a *App) heartbeatLoop(ctx context.Context) {
-	t := time.NewTicker(20 * time.Second)
+	t := time.NewTicker(5 * time.Second)
 	defer t.Stop()
+	var lastOnlineHB time.Time
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			if a.watcher == nil || a.sso == nil || !a.sso.Connected() {
+			if a.watcher == nil {
 				continue
 			}
-			for _, ch := range a.watcher.OnlineCharacters() {
+			online, gone := a.watcher.Poll()
+			if a.sso == nil || !a.sso.Connected() {
+				continue
+			}
+			for _, ch := range gone {
+				_ = a.sso.Heartbeat(ctx, ch, true)
+			}
+			// Keep online heartbeats ~20s (p99-login-proxy interval); check gone every tick.
+			if time.Since(lastOnlineHB) < 20*time.Second {
+				continue
+			}
+			lastOnlineHB = time.Now()
+			for _, ch := range online {
 				_ = a.sso.Heartbeat(ctx, ch, false)
 			}
 		}
@@ -278,7 +291,7 @@ func (a *App) busyLocal() map[string]bool {
 	if a.watcher == nil || a.local == nil {
 		return busy
 	}
-	for _, ch := range a.watcher.OnlineCharacters() {
+	for _, ch := range a.watcher.OnlineNames() {
 		for _, c := range a.local.Characters {
 			if strings.EqualFold(c.Name, ch) {
 				busy[strings.ToLower(c.Account)] = true

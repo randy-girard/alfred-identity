@@ -23,8 +23,8 @@ func TestOnlineCharactersIdle(t *testing.T) {
 	w := New(t.TempDir())
 	w.idle = time.Minute
 	now := time.Now()
-	w.online["Hero"] = now
-	w.online["Idle"] = now.Add(-2 * time.Minute)
+	w.online["Hero"] = now.Add(time.Minute)
+	w.online["Idle"] = now.Add(-time.Second)
 	got := w.OnlineCharacters()
 	if len(got) != 1 || got[0] != "Hero" {
 		t.Fatalf("%#v", got)
@@ -66,6 +66,87 @@ func TestScanYouHaveEntered(t *testing.T) {
 	online := w.OnlineCharacters()
 	if len(online) != 1 || online[0] != "Zone" {
 		t.Fatalf("%#v", online)
+	}
+}
+
+func TestScanCampPrepareExpiresWithoutActivityRefresh(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "eqlog_Camper_server.txt")
+	if err := os.WriteFile(path, []byte("Welcome to EverQuest!\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w := New(dir)
+	w.idle = time.Minute
+	offsets := map[string]int64{}
+	w.scan(offsets)
+	online, _ := w.Poll()
+	if len(online) != 1 {
+		t.Fatalf("expected online after welcome")
+	}
+
+	// Append camp + combat spam; combat must not extend presence while camping.
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.WriteString("It will take you about 30 seconds to prepare your camp.\nYou hit a gnoll for 1 point of damage.\n")
+	_ = f.Close()
+	w.scan(offsets)
+	online, _ = w.Poll()
+	if len(online) != 1 {
+		t.Fatalf("expected still online while camping: %v", online)
+	}
+
+	w.mu.Lock()
+	exp := w.online["Camper"]
+	camping := w.camping["Camper"]
+	w.mu.Unlock()
+	if !camping {
+		t.Fatal("expected camping flag")
+	}
+	if time.Until(exp) > CampGrace || time.Until(exp) < CampGrace-5*time.Second {
+		t.Fatalf("camp expiry skew: until=%v", time.Until(exp))
+	}
+
+	// Force expiry.
+	w.mu.Lock()
+	w.online["Camper"] = time.Now().Add(-time.Second)
+	w.mu.Unlock()
+	online, gone := w.Poll()
+	if len(online) != 0 {
+		t.Fatalf("online=%v", online)
+	}
+	if len(gone) != 1 || gone[0] != "Camper" {
+		t.Fatalf("gone=%v", gone)
+	}
+}
+
+func TestScanCampAbandon(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "eqlog_Stay_server.txt")
+	if err := os.WriteFile(path, []byte(
+		"Welcome to EverQuest!\nIt will take you about 30 seconds to prepare your camp.\n",
+	), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w := New(dir)
+	offsets := map[string]int64{}
+	w.scan(offsets)
+	if !w.camping["Stay"] {
+		t.Fatal("expected camping")
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.WriteString("You abandon your preparations to camp.\n")
+	_ = f.Close()
+	w.scan(offsets)
+	if w.camping["Stay"] {
+		t.Fatal("camping should clear on abandon")
+	}
+	if len(w.OnlineNames()) != 1 {
+		t.Fatal("should remain online after abandon")
 	}
 }
 
