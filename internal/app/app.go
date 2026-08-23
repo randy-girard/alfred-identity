@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -118,6 +119,7 @@ func (a *App) ClearLogs() {
 
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
+	updatecheck.CleanupStaleUpdateFiles()
 	// Menu-bar / tray icon as early as possible (safe if DomReady calls again).
 	a.startTray()
 
@@ -371,15 +373,37 @@ func (a *App) presentUpdateCheck(info UpdateInfo, offerOpen bool) {
 		if !offerOpen {
 			return
 		}
+		msg := "Version " + info.Latest + " is available (you have " + info.Current + ")."
+		primary := "Open release"
+		if info.CanApply {
+			msg += "\n\nInstall and restart now?"
+			primary = "Install"
+		} else {
+			msg += "\n\nOpen the release page?"
+		}
 		sel, err := runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
 			Type:          runtime.QuestionDialog,
 			Title:         "Update available",
-			Message:       "Version " + info.Latest + " is available (you have " + info.Current + ").\n\nOpen the release page?",
-			DefaultButton: "Yes",
-			CancelButton:  "No",
+			Message:       msg,
+			DefaultButton: primary,
+			CancelButton:  "Later",
+			Buttons:       []string{primary, "Later"},
 		})
-		if err == nil && sel == "Yes" && info.ReleaseURL != "" {
-			runtime.BrowserOpenURL(a.ctx, info.ReleaseURL)
+		if err == nil && dialogConfirmed(sel, primary, "Yes", "Install") {
+			if info.CanApply {
+				go func() {
+					if applyErr := a.ApplyUpdate(); applyErr != nil {
+						a.activateForNativeDialog()
+						_, _ = runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
+							Type:    runtime.ErrorDialog,
+							Title:   "Update failed",
+							Message: applyErr.Error(),
+						})
+					}
+				}()
+			} else if info.ReleaseURL != "" {
+				runtime.BrowserOpenURL(a.ctx, info.ReleaseURL)
+			}
 		}
 		return
 	}
@@ -1699,6 +1723,9 @@ type UpdateInfo struct {
 	Current         string `json:"current"`
 	Latest          string `json:"latest"`
 	ReleaseURL      string `json:"release_url"`
+	AssetName       string `json:"asset_name,omitempty"`
+	AssetURL        string `json:"asset_url,omitempty"`
+	CanApply        bool   `json:"can_apply"`
 	Error           string `json:"error,omitempty"`
 }
 
@@ -1724,7 +1751,62 @@ func (a *App) CheckUpdate() (UpdateInfo, error) {
 		Current:         res.Current,
 		Latest:          res.Latest,
 		ReleaseURL:      res.ReleaseURL,
+		AssetName:       res.AssetName,
+		AssetURL:        res.AssetURL,
+		CanApply:        res.CanApply,
 	}, nil
+}
+
+var applyUpdateMu sync.Mutex
+
+// ApplyUpdate downloads the latest release asset for this platform, replaces the
+// install in place (clearing macOS quarantine), relaunches, then quits.
+func (a *App) ApplyUpdate() error {
+	if isDevVersion(Version) {
+		return fmt.Errorf("in-app updates are not available for development builds")
+	}
+	if !applyUpdateMu.TryLock() {
+		return fmt.Errorf("an update is already in progress")
+	}
+	// Hold the lock until quit; do not unlock on success.
+
+	info, err := a.CheckUpdate()
+	if err != nil {
+		applyUpdateMu.Unlock()
+		return err
+	}
+	if info.Error != "" {
+		applyUpdateMu.Unlock()
+		return fmt.Errorf("%s", info.Error)
+	}
+	if !info.UpdateAvailable {
+		applyUpdateMu.Unlock()
+		return fmt.Errorf("already on the latest version")
+	}
+	if !info.CanApply || info.AssetURL == "" {
+		applyUpdateMu.Unlock()
+		return fmt.Errorf("no installable asset for this platform; open the release page instead")
+	}
+
+	ctx := a.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	a.log.Info("applying update", "latest", info.Latest, "asset", info.AssetName)
+	if err := updatecheck.Apply(ctx, info.AssetURL); err != nil {
+		applyUpdateMu.Unlock()
+		a.log.Error("update apply failed", "err", err)
+		return err
+	}
+	a.log.Info("update installed; restarting")
+	ReleaseSingleInstance()
+	if a.ctx != nil {
+		go func() {
+			time.Sleep(400 * time.Millisecond)
+			runtime.Quit(a.ctx)
+		}()
+	}
+	return nil
 }
 
 func (a *App) OpenReleaseURL(url string) {
