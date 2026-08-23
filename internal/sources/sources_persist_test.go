@@ -3,6 +3,7 @@ package sources
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -69,17 +70,21 @@ func TestMigrateLegacyProxyAndURL(t *testing.T) {
 
 func TestMigrateLegacyGitHubRepo(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "config.json")
-	raw := `{"github_repo":"alfred-identity/app"}`
-	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	m, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if m.Get().GitHubRepo != DefaultGitHubRepo {
-		t.Fatalf("got %q want %q", m.Get().GitHubRepo, DefaultGitHubRepo)
+	for _, legacy := range []string{"alfred-identity/app", "p99-identity/gui"} {
+		t.Run(legacy, func(t *testing.T) {
+			p := filepath.Join(dir, strings.ReplaceAll(legacy, "/", "_")+".json")
+			raw := `{"github_repo":"` + legacy + `"}`
+			if err := os.WriteFile(p, []byte(raw), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			m, err := Load(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if m.Get().GitHubRepo != DefaultGitHubRepo {
+				t.Fatalf("got %q want %q", m.Get().GitHubRepo, DefaultGitHubRepo)
+			}
+		})
 	}
 }
 

@@ -146,16 +146,21 @@ func migrateConnectionMode(c *Config) bool {
 	return c.ConnectionMode != before || legacyProxy
 }
 
-// migrateGitHubRepo fixes the legacy placeholder repo used before public releases existed.
+// legacyGitHubRepos are old github_repo values that should map to DefaultGitHubRepo.
+var legacyGitHubRepos = map[string]bool{
+	"alfred-identity/app": true,
+	"p99-identity/gui":    true,
+	"randy-girard/alfred-identity-gui": true,
+}
+
+// migrateGitHubRepo fixes legacy placeholder repos used before public releases existed.
 func migrateGitHubRepo(c *Config) bool {
 	before := strings.TrimSpace(c.GitHubRepo)
-	switch before {
-	case "", "alfred-identity/app":
+	if before == "" || legacyGitHubRepos[before] {
 		c.GitHubRepo = DefaultGitHubRepo
 		return c.GitHubRepo != before
-	default:
-		return false
 	}
+	return false
 }
 
 // migrateSource normalizes Host from Host or legacy URL. Returns true if changed.
