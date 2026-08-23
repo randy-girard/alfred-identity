@@ -8,6 +8,8 @@ import {sources} from '../models';
 
 export function ApplicationMenu():Promise<menu.Menu>;
 
+export function ApplyUpdate():Promise<void>;
+
 export function CheckUpdate():Promise<app.UpdateInfo>;
 
 export function ClearLogs():Promise<void>;

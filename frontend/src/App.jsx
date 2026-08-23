@@ -4,6 +4,7 @@ import './App.css'
 import {EventsOn} from '../wailsjs/runtime/runtime'
 import {
   ClearLogs,
+  ApplyUpdate,
   CheckUpdate,
   DeleteLocalAccount,
   GetLocalAccounts,
@@ -413,6 +414,7 @@ export default function App() {
   const [update, setUpdate] = useState(null)
   const [updateStatus, setUpdateStatus] = useState(null)
   const [updateChecking, setUpdateChecking] = useState(false)
+  const [updateInstalling, setUpdateInstalling] = useState(false)
   const [theme, setTheme] = useState(() => readStoredTheme())
   const [logs, setLogs] = useState([])
   const logEndRef = useRef(null)
@@ -437,6 +439,18 @@ export default function App() {
       setUpdateChecking(false)
     }
   }, [applyUpdateInfo])
+
+  const installUpdate = useCallback(async () => {
+    setUpdateInstalling(true)
+    setError('')
+    try {
+      await ApplyUpdate()
+      // App should quit and relaunch; keep spinner if it doesn't.
+    } catch (e) {
+      setError(String(e))
+      setUpdateInstalling(false)
+    }
+  }, [])
 
   useEffect(() => {
     GetVersion()
@@ -939,6 +953,16 @@ export default function App() {
           {update?.update_available && (
             <div className="banner">
               Update available: <b>{update.latest}</b>{' '}
+              {update.can_apply && (
+                <button
+                  className="secondary"
+                  type="button"
+                  disabled={busy || updateInstalling}
+                  onClick={() => installUpdate()}
+                >
+                  {updateInstalling ? 'Installing…' : 'Install & restart'}
+                </button>
+              )}{' '}
               <button className="secondary" type="button" onClick={() => OpenReleaseURL(update.release_url)}>
                 Open release
               </button>
@@ -1722,11 +1746,20 @@ export default function App() {
                 <button
                   type="button"
                   className="secondary"
-                  disabled={busy || updateChecking}
+                  disabled={busy || updateChecking || updateInstalling}
                   onClick={() => run(checkForUpdates)}
                 >
                   {updateChecking ? 'Checking…' : 'Check for updates'}
                 </button>
+                {updateStatus?.update_available && updateStatus?.can_apply && (
+                  <button
+                    type="button"
+                    disabled={busy || updateInstalling}
+                    onClick={() => installUpdate()}
+                  >
+                    {updateInstalling ? 'Installing…' : 'Install & restart'}
+                  </button>
+                )}
               </div>
               {updateStatus && !updateChecking && (
                 <p className={`hint update-status${updateStatus.error ? ' err' : ''}`}>

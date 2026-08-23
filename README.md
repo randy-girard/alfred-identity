@@ -27,7 +27,7 @@ internal/
   router/               # Login packet routing (local / SSO / busy)
   sources/              # config.json + SSO source list
   sso/                  # WebSocket SSO client
-  updatecheck/          # GitHub release checks
+  updatecheck/          # GitHub release checks + in-app install
 scripts/                # dev.sh, build.sh, test.sh, version helpers
 docs/                   # ws-api.md, protocol.md
 build/                  # Wails platform packaging assets
@@ -80,7 +80,7 @@ Open `coverage/index.html` in a browser.
 | **macOS** | Menu bar Alfred icon; Dock icon only while window is open | Click the menu bar icon → **Show Window**, or click Dock icon | Menu bar icon → **Exit**, or app menu **Quit** |
 | **Windows / Linux** | System tray icon; taskbar while window is open | Tray → **Show Window** | Tray → **Exit** |
 
-**Check for updates** is also on the menu bar / tray menu (macOS: click the Alfred icon → **Check for Updates**).
+**Check for updates** is also on the menu bar / tray menu (macOS: click the Alfred icon → **Check for Updates**). When a newer release has a matching platform zip, you can **Install & restart** in-app (downloads, replaces the install, clears macOS quarantine on the new build, then relaunches). The first install from a browser download may still need **Right-click → Open** or `xattr -cr` once; later in-app updates handle quarantine automatically.
 
 ### First-time setup
 
@@ -136,7 +136,7 @@ In-app log of proxy, SSO, eqhost, and backend activity. **Auto-scroll** and **Cl
 
 - **Appearance** — light / dark theme (saved in browser local storage on this machine)
 - **UDP proxy** — listen port
-- **Updates** — current version, **Check for updates**, link to GitHub release when newer
+- **Updates** — current version, **Check for updates**, **Install & restart** when a platform build is available, or open the GitHub release page
 
 ### Status bar
 
@@ -184,7 +184,7 @@ Example `config.json` fragment:
 | **Accounts** | SSO roster, local accounts, sharing |
 | **EverQuest** | Install path, `eqhost.txt`, online characters from logs |
 | **Logs** | Application log viewer |
-| **Settings** | Theme, listen port, update check |
+| **Settings** | Theme, listen port, update check / install |
 
 ---
 

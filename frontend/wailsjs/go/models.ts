@@ -217,6 +217,9 @@ export namespace app {
 	    current: string;
 	    latest: string;
 	    release_url: string;
+	    asset_name?: string;
+	    asset_url?: string;
+	    can_apply: boolean;
 	    error?: string;
 	
 	    static createFrom(source: any = {}) {
@@ -229,6 +232,9 @@ export namespace app {
 	        this.current = source["current"];
 	        this.latest = source["latest"];
 	        this.release_url = source["release_url"];
+	        this.asset_name = source["asset_name"];
+	        this.asset_url = source["asset_url"];
+	        this.can_apply = source["can_apply"];
 	        this.error = source["error"];
 	    }
 	}

@@ -6,6 +6,10 @@ export function ApplicationMenu() {
   return window['go']['app']['App']['ApplicationMenu']();
 }
 
+export function ApplyUpdate() {
+  return window['go']['app']['App']['ApplyUpdate']();
+}
+
 export function CheckUpdate() {
   return window['go']['app']['App']['CheckUpdate']();
 }
