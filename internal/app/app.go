@@ -1846,8 +1846,10 @@ func (a *App) ApplyUpdate() error {
 	ReleaseSingleInstance()
 	if a.ctx != nil {
 		go func() {
-			time.Sleep(400 * time.Millisecond)
-			runtime.Quit(a.ctx)
+			// Return to the UI caller before teardown; OnBeforeClose must see quitting=true
+			// or macOS tray mode hides the window and keeps the process alive (no relaunch).
+			time.Sleep(200 * time.Millisecond)
+			a.quitApp()
 		}()
 	}
 	return nil
