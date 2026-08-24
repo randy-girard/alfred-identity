@@ -14,10 +14,13 @@ import (
 // Also used as the short "definitely still writing" gate for busy state.
 const DefaultBusyIdle = 30 * time.Second
 
-// DefaultPresenceIdle is how long SSO/web presence survives quiet zones with
-// little or no log spam. Camp still expires on CampGrace; crash/quit without a
-// camp line takes up to this long to clear the web UI.
-const DefaultPresenceIdle = 5 * time.Minute
+// DefaultPresenceIdle is how long SSO/web presence survives with no new log
+// evidence. Kept only slightly above DefaultBusyIdle so quiet AFK can still
+// show "online" briefly without blocking local reuse, but "/q" / crash /
+// force-close (no camp line) frees tag/SSO accounts quickly — the GUI keeps
+// refreshing heartbeats while local presence is live, so this — not the
+// daemon TTL — is the real unblock timer. "/camp" still uses CampGrace (~35s).
+const DefaultPresenceIdle = 45 * time.Second
 
 // DefaultIdle is the legacy alias for DefaultBusyIdle (tests / older call sites).
 const DefaultIdle = DefaultBusyIdle
@@ -25,6 +28,7 @@ const DefaultIdle = DefaultBusyIdle
 // CampGrace is a faster path when "/camp" is seen in the log. Classic EQ camps
 // take ~30s and usually write no final "logged out" line; we expire ~35s after
 // the prepare-camp message and ignore combat spam during that window.
+// Note: "/q" / "/quit" / window-close often skip this message entirely.
 const CampGrace = 35 * time.Second
 
 const (

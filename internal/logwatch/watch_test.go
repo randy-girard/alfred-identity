@@ -341,6 +341,24 @@ func TestMtimeStaleClearsOnline(t *testing.T) {
 	}
 }
 
+func TestHardQuitClearsAfterPresenceIdle(t *testing.T) {
+	// /q and force-close usually write no camp line; presence must fall off on idle.
+	w := New(t.TempDir())
+	if w.presenceIdle != DefaultPresenceIdle {
+		t.Fatalf("presenceIdle=%v want default %v", w.presenceIdle, DefaultPresenceIdle)
+	}
+	w.SetOnlineForTest("Quitter")
+	if online, _ := w.Poll(); len(online) != 1 {
+		t.Fatalf("expected online before idle: %#v", online)
+	}
+	w.mu.Lock()
+	w.presence["Quitter"] = time.Now().Add(-time.Second)
+	w.mu.Unlock()
+	if online, gone := w.Poll(); len(online) != 0 || len(gone) != 1 || gone[0] != "Quitter" {
+		t.Fatalf("expected Quitter gone after idle online=%v gone=%v", online, gone)
+	}
+}
+
 func TestQuietZoneKeepsPresenceWithoutBusy(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "eqlog_AFK_server.txt")
