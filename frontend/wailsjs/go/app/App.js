@@ -46,6 +46,10 @@ export function GetLocalAccounts() {
   return window['go']['app']['App']['GetLocalAccounts']();
 }
 
+export function GetLocalAccountPassword(arg1) {
+  return window['go']['app']['App']['GetLocalAccountPassword'](arg1);
+}
+
 export function GetLocalCharacters() {
   return window['go']['app']['App']['GetLocalCharacters']();
 }

@@ -174,6 +174,8 @@ Example `config.json` fragment:
 
 `connection_mode`: `login_sso`, `login_only`, or `disabled`.
 
+**Treat this directory as secret.** `accounts.csv` stores EQ passwords in plaintext (file mode `0600`). `config.json` may contain SSO tokens in plaintext. Do not sync these files to shared drives, tickets, or chat. On shared PCs, prefer a dedicated OS user account.
+
 ---
 
 ## UI tabs (quick reference)

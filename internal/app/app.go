@@ -672,7 +672,7 @@ func (a *App) GetLocalAccounts() []LocalAccountDTO {
 			return strings.ToLower(aliases[i]) < strings.ToLower(aliases[j])
 		})
 		dto := LocalAccountDTO{
-			Name: acc.Name, Password: acc.Password, Aliases: aliases, HasPass: acc.Password != "",
+			Name: acc.Name, Password: "", Aliases: aliases, HasPass: acc.Password != "",
 			SharedUserIDs:  []int64{},
 			SharedRoleIDs:  []string{},
 			SharedGroupIDs: []int64{},
@@ -730,6 +730,22 @@ func (a *App) GetLocalAccounts() []LocalAccountDTO {
 		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
 	})
 	return out
+}
+
+// GetLocalAccountPassword returns the plaintext password for editing a local account.
+// The list from GetLocalAccounts omits passwords to reduce accidental UI/devtools exposure.
+func (a *App) GetLocalAccountPassword(name string) (string, error) {
+	if a.local == nil {
+		return "", fmt.Errorf("not ready")
+	}
+	_ = a.local.Load()
+	name = strings.TrimSpace(name)
+	for _, acc := range a.local.Accounts {
+		if strings.EqualFold(acc.Name, name) {
+			return acc.Password, nil
+		}
+	}
+	return "", fmt.Errorf("account not found")
 }
 
 func (a *App) GetLocalCharacters() []LocalCharacterDTO {

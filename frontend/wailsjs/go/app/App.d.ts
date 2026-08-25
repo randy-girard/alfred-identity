@@ -28,6 +28,8 @@ export function GetEqHostState():Promise<app.EqHostState>;
 
 export function GetLocalAccounts():Promise<Array<app.LocalAccountDTO>>;
 
+export function GetLocalAccountPassword(arg1:string):Promise<string>;
+
 export function GetLocalCharacters():Promise<Array<app.LocalCharacterDTO>>;
 
 export function GetLogs(arg1:number):Promise<Array<logbuf.Entry>>;

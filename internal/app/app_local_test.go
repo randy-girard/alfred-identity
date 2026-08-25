@@ -44,6 +44,13 @@ func TestLocalAccountCRUD(t *testing.T) {
 	if len(accts) != 1 || accts[0].Name != "Tank" || !accts[0].HasPass {
 		t.Fatalf("%+v", accts)
 	}
+	if accts[0].Password != "" {
+		t.Fatal("list DTO must omit password")
+	}
+	pw, err := a.GetLocalAccountPassword("Tank")
+	if err != nil || pw != "secret" {
+		t.Fatalf("password=%q err=%v", pw, err)
+	}
 
 	chars := a.GetLocalCharacters()
 	if len(chars) != 0 {

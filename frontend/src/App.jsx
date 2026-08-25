@@ -8,6 +8,7 @@ import {
   CheckUpdate,
   DeleteLocalAccount,
   GetLocalAccounts,
+  GetLocalAccountPassword,
   GetLogs,
   GetStatus,
   GetVersion,
@@ -548,10 +549,16 @@ export default function App() {
     }
   }
 
-  function selectLocal(acc) {
+  async function selectLocal(acc) {
+    let password = ''
+    try {
+      password = await GetLocalAccountPassword(acc.name || '')
+    } catch (_) {
+      password = ''
+    }
     setLocalForm({
       name: acc.name || '',
-      password: acc.password || '',
+      password: password || '',
       aliases: (acc.aliases || []).join(', '),
       editing: true,
     })
