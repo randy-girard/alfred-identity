@@ -117,6 +117,34 @@ func (a *App) ClearLogs() {
 	if a.logBuf != nil {
 		a.logBuf.Clear()
 	}
+	a.logInfo("logs cleared")
+}
+
+func (a *App) logInfo(msg string, args ...any) {
+	if a == nil || a.log == nil {
+		return
+	}
+	a.log.Info(msg, args...)
+}
+
+func (a *App) logWarn(msg string, args ...any) {
+	if a == nil || a.log == nil {
+		return
+	}
+	a.log.Warn(msg, args...)
+}
+
+// logResult records a user/system action in the GUI log. Never pass passwords or tokens in args.
+func (a *App) logResult(msg string, err error, args ...any) error {
+	if a == nil || a.log == nil {
+		return err
+	}
+	if err != nil {
+		a.log.Warn(msg+": failed", append(append([]any{}, args...), "err", err)...)
+		return err
+	}
+	a.log.Info(msg, args...)
+	return nil
 }
 
 func (a *App) Startup(ctx context.Context) {
@@ -131,6 +159,7 @@ func (a *App) Startup(ctx context.Context) {
 		dir = filepath.Join(home, ConfigDirName)
 	}
 	_ = os.MkdirAll(dir, 0o700)
+	a.logInfo("app starting", "version", Version, "config_dir", dir)
 
 	cfgPath := filepath.Join(dir, "config.json")
 	mgr, err := sources.Load(cfgPath)
@@ -150,13 +179,17 @@ func (a *App) Startup(ctx context.Context) {
 	}
 	a.local = &localdata.Store{AccountsPath: accPath, CharactersPath: charPath}
 	_ = a.local.Load()
+	a.logInfo("local data loaded", "accounts", len(a.local.Accounts), "characters", len(a.local.Characters))
 
 	if cfg.EQDirectory != "" {
 		a.startWatcher(cfg.EQDirectory)
+		a.logInfo("EQ log watcher started", "eq_directory", cfg.EQDirectory)
 	}
 
 	if err := a.applyConnectionMode(cfg.ConnectionMode, false); err != nil {
 		a.log.Warn("connection mode auto-start", "err", err, "mode", cfg.ConnectionMode)
+	} else {
+		a.logInfo("connection mode applied", "mode", string(cfg.ConnectionMode))
 	}
 
 	hbCtx, cancel := context.WithCancel(ctx)
@@ -167,6 +200,7 @@ func (a *App) Startup(ctx context.Context) {
 }
 
 func (a *App) Shutdown(ctx context.Context) {
+	a.logInfo("app shutting down")
 	if a.hbCancel != nil {
 		a.hbCancel()
 	}
@@ -256,8 +290,9 @@ func (a *App) syncSSOPresenceFromLogs() {
 
 func (a *App) connectSSO(wsURL, token string) error {
 	if err := a.sso.Connect(a.ctx, wsURL, token, "gui/"+Version); err != nil {
-		return err
+		return a.logResult("sso connect", err, "url", wsURL)
 	}
+	a.logInfo("sso connect ok", "url", wsURL)
 	// Watcher may still be catching up; sync now and again shortly.
 	a.syncSSOPresenceFromLogs()
 	go func() {
@@ -762,10 +797,11 @@ func (a *App) GetLocalCharacters() []LocalCharacterDTO {
 
 func (a *App) SaveLocalAccount(name, password string, aliases []string) error {
 	if a.local == nil {
-		return fmt.Errorf("not ready")
+		return a.logResult("local account save", fmt.Errorf("not ready"), "name", name)
 	}
 	_ = a.local.Load()
-	return a.local.UpsertAccount(name, password, aliases)
+	err := a.local.UpsertAccount(name, password, aliases)
+	return a.logResult("local account saved", err, "name", name, "aliases", len(aliases), "password_set", strings.TrimSpace(password) != "")
 }
 
 // ShareLocalAccount publishes a local account to SSO as a restricted share for users, roles, and/or groups.
@@ -811,20 +847,21 @@ func (a *App) ShareLocalAccount(name string, userIDs []int64, roleIDs []string, 
 		groupIDs = []int64{}
 	}
 	_, err := a.sso.ShareAccount(a.ctx, acc.Name, acc.Password, aliases, userIDs, roleIDs, groupIDs)
-	return err
+	return a.logResult("local account shared to SSO", err,
+		"name", acc.Name, "users", len(userIDs), "roles", len(roleIDs), "groups", len(groupIDs))
 }
 
 // UnshareLocalAccount removes the owner's restricted SSO copy of a local account.
 func (a *App) UnshareLocalAccount(name string) error {
 	if a.sso == nil || !a.sso.Connected() {
-		return fmt.Errorf("not connected to SSO")
+		return a.logResult("local account unshare", fmt.Errorf("not connected to SSO"), "name", name)
 	}
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return fmt.Errorf("account required")
+		return a.logResult("local account unshare", fmt.Errorf("account required"))
 	}
 	_, err := a.sso.UnshareAccount(a.ctx, name)
-	return err
+	return a.logResult("local account unshared from SSO", err, "name", name)
 }
 
 // ImportLocalAccountsCSV opens a file picker and merges accounts from a CSV
@@ -997,8 +1034,10 @@ func (a *App) ImportLocalAccountsFromPath(path string) (ImportAccountsResult, er
 	_ = a.local.Load()
 	added, updated, err := a.local.ImportAccountsCSV(importPath)
 	if err != nil {
+		_ = a.logResult("local accounts import", err, "path", importPath)
 		return ImportAccountsResult{}, err
 	}
+	a.logInfo("local accounts imported", "path", importPath, "added", added, "updated", updated)
 	return ImportAccountsResult{
 		Message: fmt.Sprintf("Imported %d new, updated %d existing.", added, updated),
 		Added:   added,
@@ -1032,8 +1071,10 @@ func (a *App) ExportLocalAccountsCSV() (string, error) {
 	_ = a.local.Load()
 	n, err := a.local.ExportAccountsCSV(path)
 	if err != nil {
+		_ = a.logResult("local accounts export", err, "path", path)
 		return "", err
 	}
+	a.logInfo("local accounts exported", "path", path, "count", n)
 	msg := fmt.Sprintf("Exported %d account(s) to %s", n, path)
 	_, _ = runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
 		Type:    runtime.InfoDialog,
@@ -1045,30 +1086,30 @@ func (a *App) ExportLocalAccountsCSV() (string, error) {
 
 func (a *App) DeleteLocalAccount(name string) error {
 	if a.local == nil {
-		return fmt.Errorf("not ready")
+		return a.logResult("local account delete", fmt.Errorf("not ready"), "name", name)
 	}
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return fmt.Errorf("account name required")
+		return a.logResult("local account delete", fmt.Errorf("account name required"))
 	}
 	_ = a.local.Load()
-	return a.local.DeleteAccount(name)
+	return a.logResult("local account deleted", a.local.DeleteAccount(name), "name", name)
 }
 
 func (a *App) SaveLocalCharacter(account, name string) error {
 	if a.local == nil {
-		return fmt.Errorf("not ready")
+		return a.logResult("local character save", fmt.Errorf("not ready"), "account", account, "name", name)
 	}
 	_ = a.local.Load()
-	return a.local.UpsertCharacter(account, name)
+	return a.logResult("local character saved", a.local.UpsertCharacter(account, name), "account", account, "name", name)
 }
 
 func (a *App) DeleteLocalCharacter(name string) error {
 	if a.local == nil {
-		return fmt.Errorf("not ready")
+		return a.logResult("local character delete", fmt.Errorf("not ready"), "name", name)
 	}
 	_ = a.local.Load()
-	return a.local.DeleteCharacter(name)
+	return a.logResult("local character deleted", a.local.DeleteCharacter(name), "name", name)
 }
 
 func (a *App) GetSources() []SourceDTO {
@@ -1098,7 +1139,7 @@ func (a *App) SSOAdminAddAccount(username, password, requiredRoleID string) erro
 		return fmt.Errorf("password required")
 	}
 	_, err := a.sso.AdminAddAccount(a.ctx, username, password, strings.TrimSpace(requiredRoleID))
-	return err
+	return a.logResult("sso admin add account", err, "username", username, "role_set", strings.TrimSpace(requiredRoleID) != "")
 }
 
 func (a *App) SSOAdminUpdateAccount(accountID int64, password string, disabled bool, setDisabled bool, requiredRoleID string, setRequiredRole bool) error {
@@ -1129,7 +1170,7 @@ func (a *App) SSOAdminUpdateAccount(accountID int64, password string, disabled b
 		return fmt.Errorf("nothing to update")
 	}
 	_, err := a.sso.AdminUpdateAccount(a.ctx, accountID, pw, dis, role)
-	return err
+	return a.logResult("sso admin update account", err, "account_id", accountID, "set_password", pw != nil, "set_disabled", dis != nil, "set_role", role != nil)
 }
 
 func (a *App) SSOAdminAddAlias(alias string, accountID int64) error {
@@ -1147,7 +1188,7 @@ func (a *App) SSOAdminAddAlias(alias string, accountID int64) error {
 		return fmt.Errorf("account required")
 	}
 	_, err := a.sso.AdminAddAlias(a.ctx, alias, accountID)
-	return err
+	return a.logResult("sso admin add alias", err, "alias", alias, "account_id", accountID)
 }
 
 func (a *App) SSOAdminRemoveAlias(alias string, accountID int64) error {
@@ -1165,7 +1206,7 @@ func (a *App) SSOAdminRemoveAlias(alias string, accountID int64) error {
 		return fmt.Errorf("account required")
 	}
 	_, err := a.sso.AdminRemoveAlias(a.ctx, alias, accountID)
-	return err
+	return a.logResult("sso admin remove alias", err, "alias", alias, "account_id", accountID)
 }
 
 func (a *App) SSOAdminAddTag(tag string, accountID int64) error {
@@ -1183,7 +1224,7 @@ func (a *App) SSOAdminAddTag(tag string, accountID int64) error {
 		return fmt.Errorf("account required")
 	}
 	_, err := a.sso.AdminAddTag(a.ctx, tag, accountID)
-	return err
+	return a.logResult("sso admin add tag", err, "tag", tag, "account_id", accountID)
 }
 
 func (a *App) SSOAdminRemoveTag(tag string, accountID int64) error {
@@ -1201,7 +1242,7 @@ func (a *App) SSOAdminRemoveTag(tag string, accountID int64) error {
 		return fmt.Errorf("account required")
 	}
 	_, err := a.sso.AdminRemoveTag(a.ctx, tag, accountID)
-	return err
+	return a.logResult("sso admin remove tag", err, "tag", tag, "account_id", accountID)
 }
 
 func (a *App) SSOAdminAddCharacter(name string, accountID int64) error {
@@ -1219,7 +1260,7 @@ func (a *App) SSOAdminAddCharacter(name string, accountID int64) error {
 		return fmt.Errorf("account required")
 	}
 	_, err := a.sso.AdminAddCharacter(a.ctx, name, accountID)
-	return err
+	return a.logResult("sso admin add character", err, "name", name, "account_id", accountID)
 }
 
 func (a *App) SSOAdminRemoveCharacter(name string, accountID int64) error {
@@ -1237,7 +1278,7 @@ func (a *App) SSOAdminRemoveCharacter(name string, accountID int64) error {
 		return fmt.Errorf("account required")
 	}
 	_, err := a.sso.AdminRemoveCharacter(a.ctx, name, accountID)
-	return err
+	return a.logResult("sso admin remove character", err, "name", name, "account_id", accountID)
 }
 
 func (a *App) SSOAdminRemoveAccount(accountID int64) error {
@@ -1271,7 +1312,7 @@ func (a *App) SSOAdminRemoveAccount(accountID int64) error {
 		return nil
 	}
 	_, err = a.sso.AdminRemoveAccount(a.ctx, accountID)
-	return err
+	return a.logResult("sso admin remove account", err, "account_id", accountID, "label", label)
 }
 
 func (a *App) SSOAdminSetUserAccess(userID int64, revoked bool) error {
@@ -1316,20 +1357,19 @@ func (a *App) SSOAdminSetUserAccess(userID int64, revoked bool) error {
 		msg := err.Error()
 		switch msg {
 		case "cannot_revoke_self":
-			return fmt.Errorf("you cannot revoke your own access")
+			err = fmt.Errorf("you cannot revoke your own access")
 		case "invalid_user":
-			return fmt.Errorf("invalid user")
+			err = fmt.Errorf("invalid user")
 		case "forbidden":
-			return fmt.Errorf("admin access required")
-		default:
-			return err
+			err = fmt.Errorf("admin access required")
 		}
+		return a.logResult("sso admin set user access", err, "user_id", userID, "revoked", revoked)
 	}
 	// Pull admin roster so the Users tab reflects access_revoked immediately.
 	if a.ctx != nil {
 		_ = a.sso.RefreshState(a.ctx)
 	}
-	return nil
+	return a.logResult("sso admin set user access", nil, "user_id", userID, "revoked", revoked)
 }
 
 func (a *App) SSOAdminSetUserRoles(userID int64, roleIDs []string) error {
@@ -1343,7 +1383,7 @@ func (a *App) SSOAdminSetUserRoles(userID int64, roleIDs []string) error {
 		return fmt.Errorf("user required")
 	}
 	_, err := a.sso.AdminSetUserRoles(a.ctx, userID, roleIDs)
-	return err
+	return a.logResult("sso admin set user roles", err, "user_id", userID, "roles", len(roleIDs))
 }
 
 func (a *App) SaveSource(src sources.Source) (SourceDTO, error) {
@@ -1397,6 +1437,7 @@ func (a *App) SaveSource(src sources.Source) (SourceDTO, error) {
 		if saved.CanConnect() {
 			wsURL, err := saved.DialURL()
 			if err != nil {
+				_ = a.logResult("sso source save", err, "id", saved.ID, "name", saved.Name, "host", saved.Host)
 				return sourceDTO(saved), err
 			}
 			if err := a.connectSSO(wsURL, saved.Token); err != nil {
@@ -1404,6 +1445,7 @@ func (a *App) SaveSource(src sources.Source) (SourceDTO, error) {
 			}
 		}
 	}
+	a.logInfo("sso source saved", "id", saved.ID, "name", saved.Name, "host", saved.Host, "has_token", strings.TrimSpace(saved.Token) != "", "active", makeActive)
 	return sourceDTO(saved), nil
 }
 
@@ -1443,16 +1485,17 @@ func (a *App) SetActiveSource(id string) error {
 	}
 	_ = a.cfg.Update(func(c *sources.Config) { c.ActiveSourceID = id })
 	a.sso.Disconnect()
+	a.logInfo("sso active source set", "id", id)
 	if !a.cfg.Mode().WantsSSO() {
 		return nil
 	}
 	src, ok := a.cfg.Active()
 	if !ok || !src.CanConnect() {
-		return fmt.Errorf("source has no host or token — save credentials first")
+		return a.logResult("sso active source connect", fmt.Errorf("source has no host or token — save credentials first"), "id", id)
 	}
 	wsURL, err := src.DialURL()
 	if err != nil {
-		return err
+		return a.logResult("sso active source connect", err, "id", id, "name", src.Name)
 	}
 	return a.connectSSO(wsURL, src.Token)
 }
@@ -1479,8 +1522,9 @@ func (a *App) DeleteSource(id string) error {
 	}
 	wasActive := a.cfg.Get().ActiveSourceID == id
 	if err := a.cfg.DeleteSource(id); err != nil {
-		return err
+		return a.logResult("sso source delete", err, "id", id, "name", label)
 	}
+	a.logInfo("sso source deleted", "id", id, "name", label, "was_active", wasActive)
 	if !wasActive {
 		return nil
 	}
@@ -1547,6 +1591,7 @@ func (a *App) applyConnectionMode(mode sources.ConnectionMode, showEqhostDialog 
 	} else if a.sso != nil {
 		a.sso.Disconnect()
 	}
+	a.logInfo("connection mode changed", "mode", string(mode), "previous", string(prev))
 	return nil
 }
 
@@ -1555,11 +1600,11 @@ func (a *App) SetEQDirectory(path string) error {
 		return nil
 	}
 	if err := eqpath.ValidateInstall(path); err != nil {
-		return err
+		return a.logResult("EQ directory set", err, "path", path)
 	}
 	_ = a.cfg.Update(func(c *sources.Config) { c.EQDirectory = path })
 	a.startWatcher(path)
-	return nil
+	return a.logResult("EQ directory set", nil, "path", path)
 }
 
 // EqHostState describes eqhost.txt and its backup for the EverQuest tab.
@@ -1611,11 +1656,12 @@ func (a *App) GetEqHostState() (EqHostState, error) {
 func (a *App) SaveEqHostContent(content string) error {
 	dir, err := a.eqInstallDir()
 	if err != nil {
-		return err
+		return a.logResult("eqhost.txt save", err)
 	}
 	if err := eqhost.Write(dir, content); err != nil {
-		return err
+		return a.logResult("eqhost.txt save", err, "eq_directory", dir)
 	}
+	a.logInfo("eqhost.txt saved", "eq_directory", dir)
 	if a.ctx != nil {
 		_, _ = runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
 			Type:    runtime.InfoDialog,
@@ -1630,11 +1676,12 @@ func (a *App) SaveEqHostContent(content string) error {
 func (a *App) RestoreEqHostBackup() error {
 	dir, err := a.eqInstallDir()
 	if err != nil {
-		return err
+		return a.logResult("eqhost.txt restore", err)
 	}
 	if err := eqhost.RestoreBackup(dir); err != nil {
-		return err
+		return a.logResult("eqhost.txt restore", err, "eq_directory", dir)
 	}
+	a.logInfo("eqhost.txt restored from backup", "eq_directory", dir)
 	if a.ctx != nil {
 		_, _ = runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
 			Type:    runtime.InfoDialog,
@@ -1705,8 +1752,9 @@ func (a *App) SetListenAddr(addr string) error {
 		a.stopProxyRuntime(false)
 	}
 	if err := a.cfg.Update(func(c *sources.Config) { c.ListenAddr = addr }); err != nil {
-		return err
+		return a.logResult("listen address set", err, "addr", addr)
 	}
+	a.logInfo("listen address set", "addr", addr, "restart_proxy", wasOn)
 	if wasOn {
 		return a.startProxy(false)
 	}
@@ -1738,8 +1786,9 @@ func (a *App) startProxy(showEqhostDialog bool) error {
 		Listen: cfg.ListenAddr, Upstream: cfg.UpstreamAddr, Router: r, Log: a.log,
 	}
 	if err := a.proxy.Start(a.ctx); err != nil {
-		return err
+		return a.logResult("UDP proxy start", err, "listen", cfg.ListenAddr)
 	}
+	a.logInfo("UDP proxy started", "listen", cfg.ListenAddr, "upstream", cfg.UpstreamAddr)
 	if cfg.EQDirectory != "" {
 		changed, err := eqhost.Enable(cfg.EQDirectory, cfg.ListenAddr)
 		if err != nil {
@@ -1768,13 +1817,18 @@ func (a *App) stopProxyRuntime(restoreEqhost bool) {
 	if a.proxy != nil {
 		a.proxy.Stop()
 		a.proxy = nil
+		a.logInfo("UDP proxy stopped", "restore_eqhost", restoreEqhost)
 	}
 	if !restoreEqhost || a.cfg == nil {
 		return
 	}
 	cfg := a.cfg.Get()
 	if cfg.EQDirectory != "" {
-		_ = eqhost.Disable(cfg.EQDirectory)
+		if err := eqhost.Disable(cfg.EQDirectory); err != nil {
+			a.logWarn("eqhost restore failed", "err", err)
+		} else {
+			a.logInfo("eqhost restored from backup")
+		}
 	}
 }
 
@@ -1804,8 +1858,10 @@ func (a *App) CheckUpdate() (UpdateInfo, error) {
 	}
 	res, err := updatecheck.Check(a.ctx, repo, Version)
 	if err != nil {
+		a.logWarn("update check failed", "err", err, "repo", repo)
 		return UpdateInfo{Current: Version, Error: err.Error()}, nil
 	}
+	a.logInfo("update check", "repo", repo, "current", Version, "latest", res.Latest, "available", res.UpdateAvailable)
 	return UpdateInfo{
 		UpdateAvailable: res.UpdateAvailable,
 		Current:         res.Current,

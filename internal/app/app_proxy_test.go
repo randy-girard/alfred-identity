@@ -66,8 +66,33 @@ func TestGetLogsAndClearLogs(t *testing.T) {
 		t.Fatal("expected default limit logs")
 	}
 	a.ClearLogs()
-	if len(a.GetLogs(100)) != 0 {
-		t.Fatal("clear should empty buffer")
+	got := a.GetLogs(100)
+	if len(got) != 1 || got[0].Message != "logs cleared" {
+		t.Fatalf("clear should leave only cleared marker: %#v", got)
+	}
+}
+
+func TestSaveLocalAccountLogsAction(t *testing.T) {
+	a, _ := testAppWithConfig(t)
+	a.ClearLogs()
+	if err := a.SaveLocalAccount("Logger", "secret", []string{"box"}); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, e := range a.GetLogs(50) {
+		if e.Message == "local account saved" {
+			found = true
+			if e.Level != "INFO" {
+				t.Fatalf("level=%s", e.Level)
+			}
+			if e.Attrs == "" || !strings.Contains(e.Attrs, "name=Logger") {
+				t.Fatalf("attrs=%q", e.Attrs)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected local account saved log, got %#v", a.GetLogs(50))
 	}
 }
 

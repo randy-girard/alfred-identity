@@ -1646,6 +1646,9 @@ export default function App() {
             <div className="panel-scroll logs-scroll">
               <div className="row status-head">
                 <h2 className="flush">Application log</h2>
+                <p className="hint">
+                  Startup, proxy, SSO, account, share, and settings actions appear here. Passwords and tokens are never logged.
+                </p>
                 <div className="row">
                   <label className="checkbox-inline">
                     <input
