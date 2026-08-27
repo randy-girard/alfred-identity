@@ -1089,7 +1089,7 @@ export default function App() {
         )}
 
         {tab === 'accounts' && (
-          <section className="panel">
+          <section className="panel accounts-panel">
             <nav className="subtabs" role="tablist" aria-label="Account type">
               {accountSubtabs.map((t) => (
                 <button
@@ -1105,7 +1105,7 @@ export default function App() {
               ))}
             </nav>
 
-            <div className="panel-scroll">
+            <div className={accountSub === 'shared' ? 'accounts-pane accounts-pane-flow' : 'accounts-pane'}>
               {accountSub === 'sso' && (
                 <>
                   <p className="hint">

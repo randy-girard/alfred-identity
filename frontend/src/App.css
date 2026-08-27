@@ -70,10 +70,48 @@
   border-color: var(--line);
 }
 
+.accounts-pane {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.accounts-pane > .hint,
+.accounts-pane > .empty,
+.accounts-pane > .row,
+.accounts-pane > .status-head {
+  flex-shrink: 0;
+}
+
+.accounts-pane .table-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-bottom: 0;
+}
+
+.accounts-pane .data-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  box-shadow: 0 1px 0 var(--line);
+}
+
+/* Shared tab has multiple sections/tables — scroll the pane as a whole. */
+.accounts-pane.accounts-pane-flow {
+  overflow: auto;
+}
+
+.accounts-pane.accounts-pane-flow .table-wrap {
+  flex: 0 0 auto;
+  margin-bottom: 0.75rem;
+}
+
 main {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   padding: 1rem;
   display: flex;
   flex-direction: column;
