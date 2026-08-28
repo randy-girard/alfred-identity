@@ -99,6 +99,23 @@ func (s *Server) Start(parent context.Context) error {
 			}
 		}
 	}()
+
+	go func() {
+		t := time.NewTicker(idleKeepaliveInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				if pkt := engine.UpstreamKeepalivePacket(); pkt != nil {
+					if _, err := c.WriteToUDP(pkt, upAddr); err != nil {
+						log.Warn("idle keepalive to upstream failed", "err", err)
+					}
+				}
+			}
+		}
+	}()
 	return nil
 }
 

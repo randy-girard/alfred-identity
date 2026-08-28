@@ -4,21 +4,28 @@ import (
 	"context"
 	"log/slog"
 	"net"
+	"sync"
+	"time"
 
 	"github.com/alfred-identity/app/internal/protocol"
 	"github.com/alfred-identity/app/internal/router"
 )
 
+// idleKeepaliveInterval is how often the proxy sends SOE keepalives upstream
+// when a login session is open but the EQ client is idle (server select, etc.).
+const idleKeepaliveInterval = 25 * time.Second
+
 // Engine implements the p99-login-proxy UDP relay with SOE CRC and session sequencing.
 type Engine struct {
+	mu      sync.Mutex
 	Router  *router.Router
 	Session protocol.ProxySessionState
 	Log     *slog.Logger
 
-	crcBytes byte
-	crcKey   uint32
+	crcBytes  byte
+	crcKey    uint32
 	maxPacket uint32
-	client   *net.UDPAddr
+	client    *net.UDPAddr
 }
 
 // Actions are outbound datagrams before CRC is restored.
@@ -28,10 +35,32 @@ type Actions struct {
 }
 
 func (e *Engine) ClientAddr() *net.UDPAddr {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	return e.client
 }
 
 func (e *Engine) OnDatagram(ctx context.Context, data []byte, from, upstream *net.UDPAddr) Actions {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.onDatagramLocked(ctx, data, from, upstream)
+}
+
+// UpstreamKeepalivePacket returns a wire-ready SOE keepalive for the current session, or nil.
+func (e *Engine) UpstreamKeepalivePacket() []byte {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.crcBytes == 0 || e.crcKey == 0 || e.client == nil {
+		return nil
+	}
+	out := e.finalizeLocked([][]byte{{0x00, byte(protocol.OpKeepAlive)}})
+	if len(out) == 0 {
+		return nil
+	}
+	return out[0]
+}
+
+func (e *Engine) onDatagramLocked(ctx context.Context, data []byte, from, upstream *net.UDPAddr) Actions {
 	packet := e.stripCRC(data)
 	if isUpstreamPeer(from, upstream) {
 		return e.handleServer(ctx, packet)
@@ -42,6 +71,12 @@ func (e *Engine) OnDatagram(ctx context.Context, data []byte, from, upstream *ne
 
 // Finalize restores SOE CRC on wire-bound packets.
 func (e *Engine) Finalize(packets [][]byte) [][]byte {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.finalizeLocked(packets)
+}
+
+func (e *Engine) finalizeLocked(packets [][]byte) [][]byte {
 	if e.crcBytes == 0 {
 		return packets
 	}
@@ -89,6 +124,8 @@ func (e *Engine) handleClient(ctx context.Context, data []byte) Actions {
 		}
 	case protocol.OpAck:
 		e.Session.AdjustAck(outbound, 0)
+	case protocol.OpKeepAlive:
+		// Passthrough; keeps idle login-server sessions alive at server select.
 	case protocol.OpPacket:
 		e.Session.AdjustClientPacket(outbound, 0)
 	case protocol.OpFragment:
@@ -140,6 +177,8 @@ func (e *Engine) handleServer(ctx context.Context, data []byte) Actions {
 		buf := append([]byte{}, data...)
 		e.Session.AdjustServerAck(buf, 0)
 		actions.SendClient = append(actions.SendClient, buf)
+	case protocol.OpKeepAlive:
+		actions.SendClient = append(actions.SendClient, append([]byte{}, data...))
 	default:
 		actions.SendClient = append(actions.SendClient, append([]byte{}, data...))
 	}

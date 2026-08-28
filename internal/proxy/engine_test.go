@@ -237,3 +237,32 @@ func TestEngineOnDatagramUpstreamUsesNormalizeAddr(t *testing.T) {
 		t.Fatal("expected upstream packet handling")
 	}
 }
+
+func TestEngineUpstreamKeepalivePacket(t *testing.T) {
+	e := &Engine{}
+	if pkt := e.UpstreamKeepalivePacket(); pkt != nil {
+		t.Fatal("expected nil before session")
+	}
+	client := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 6000}
+	resp := make([]byte, 17)
+	resp[0], resp[1] = 0x00, protocol.OpSessionResponse
+	e.OnDatagram(context.Background(), resp, &net.UDPAddr{IP: net.IPv4(1, 2, 3, 4), Port: 5998}, &net.UDPAddr{IP: net.IPv4(1, 2, 3, 4), Port: 5998})
+	e.OnDatagram(context.Background(), []byte{0x00, protocol.OpKeepAlive}, client, &net.UDPAddr{IP: net.IPv4(1, 2, 3, 4), Port: 5998})
+	pkt := e.UpstreamKeepalivePacket()
+	if pkt == nil {
+		t.Fatal("expected keepalive packet")
+	}
+	if protocol.TransportOpcode(pkt[:len(pkt)-2]) != protocol.OpKeepAlive {
+		t.Fatalf("opcode=%x", protocol.TransportOpcode(pkt))
+	}
+}
+
+func TestEngineForwardsKeepAliveFromServer(t *testing.T) {
+	e := &Engine{}
+	upstream := &net.UDPAddr{IP: net.IPv4(1, 2, 3, 4), Port: 5998}
+	actions := e.handleServer(context.Background(), []byte{0x00, protocol.OpKeepAlive})
+	if len(actions.SendClient) != 1 || protocol.TransportOpcode(actions.SendClient[0]) != protocol.OpKeepAlive {
+		t.Fatalf("actions=%#v", actions)
+	}
+	_ = upstream
+}

@@ -392,7 +392,7 @@ func (c *Client) Connect(parent context.Context, wsURL, token, clientVersion str
 // defaultKeepaliveInterval is how often the client sends a ping while connected.
 // Character heartbeats only fire when someone is online; without this, idle
 // sockets are often closed by reverse proxies around ~60s of silence.
-const defaultKeepaliveInterval = 25 * time.Second
+const defaultKeepaliveInterval = 20 * time.Second
 
 // SetKeepaliveIntervalForTest sets this client's ping interval (call before Connect).
 func (c *Client) SetKeepaliveIntervalForTest(d time.Duration) {
