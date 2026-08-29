@@ -244,10 +244,14 @@ func TestEngineUpstreamKeepalivePacket(t *testing.T) {
 		t.Fatal("expected nil before session")
 	}
 	client := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 6000}
+	upstream := &net.UDPAddr{IP: net.IPv4(1, 2, 3, 4), Port: 5998}
 	resp := make([]byte, 17)
 	resp[0], resp[1] = 0x00, protocol.OpSessionResponse
-	e.OnDatagram(context.Background(), resp, &net.UDPAddr{IP: net.IPv4(1, 2, 3, 4), Port: 5998}, &net.UDPAddr{IP: net.IPv4(1, 2, 3, 4), Port: 5998})
-	e.OnDatagram(context.Background(), []byte{0x00, protocol.OpKeepAlive}, client, &net.UDPAddr{IP: net.IPv4(1, 2, 3, 4), Port: 5998})
+	binary.BigEndian.PutUint32(resp[6:10], 0x12345678)
+	resp[10] = 2
+	binary.LittleEndian.PutUint32(resp[13:17], 512)
+	e.OnDatagram(context.Background(), resp, upstream, upstream)
+	e.OnDatagram(context.Background(), []byte{0x00, protocol.OpKeepAlive}, client, upstream)
 	pkt := e.UpstreamKeepalivePacket()
 	if pkt == nil {
 		t.Fatal("expected keepalive packet")
