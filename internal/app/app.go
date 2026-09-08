@@ -47,14 +47,20 @@ func dialogConfirmed(selection string, accept ...string) bool {
 	}
 }
 
+// prepareNativeDialog makes the app foreground so Wails native dialogs receive clicks
+// (required on macOS when running primarily as a menu-bar accessory process).
+func (a *App) prepareNativeDialog() {
+	a.activateForNativeDialog()
+	a.showWindowForDialog()
+}
+
 // confirmDialog shows a native question dialog. accept is the primary button label
 // (also matched case-insensitively along with Ok/Yes on Windows).
 func (a *App) confirmDialog(title, message, accept string) (bool, error) {
 	if a.ctx == nil {
 		return true, nil
 	}
-	a.activateForNativeDialog()
-	a.showWindowForDialog()
+	a.prepareNativeDialog()
 	cancel := "Cancel"
 	sel, err := runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
 		Type:          runtime.QuestionDialog,
@@ -68,6 +74,32 @@ func (a *App) confirmDialog(title, message, accept string) (bool, error) {
 		return false, err
 	}
 	return dialogConfirmed(sel, accept), nil
+}
+
+// infoDialog shows a native info dialog that the user must dismiss.
+func (a *App) infoDialog(title, message string) {
+	if a.ctx == nil {
+		return
+	}
+	a.prepareNativeDialog()
+	_, _ = runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
+		Type:    runtime.InfoDialog,
+		Title:   title,
+		Message: message,
+	})
+}
+
+// errorDialog shows a native error dialog that the user must dismiss.
+func (a *App) errorDialog(title, message string) {
+	if a.ctx == nil {
+		return
+	}
+	a.prepareNativeDialog()
+	_, _ = runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
+		Type:    runtime.ErrorDialog,
+		Title:   title,
+		Message: message,
+	})
 }
 
 // App is the native Wails backend.
@@ -450,13 +482,8 @@ func (a *App) presentUpdateCheck(info UpdateInfo, offerOpen bool) {
 	if a.ctx == nil {
 		return
 	}
-	a.activateForNativeDialog()
 	if info.Error != "" {
-		_, _ = runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
-			Type:    runtime.ErrorDialog,
-			Title:   "Update check failed",
-			Message: info.Error,
-		})
+		a.errorDialog("Update check failed", info.Error)
 		return
 	}
 	if info.UpdateAvailable {
@@ -471,6 +498,7 @@ func (a *App) presentUpdateCheck(info UpdateInfo, offerOpen bool) {
 		} else {
 			msg += "\n\nOpen the release page?"
 		}
+		a.prepareNativeDialog()
 		sel, err := runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
 			Type:          runtime.QuestionDialog,
 			Title:         "Update available",
@@ -483,12 +511,7 @@ func (a *App) presentUpdateCheck(info UpdateInfo, offerOpen bool) {
 			if info.CanApply {
 				go func() {
 					if applyErr := a.ApplyUpdate(); applyErr != nil {
-						a.activateForNativeDialog()
-						_, _ = runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
-							Type:    runtime.ErrorDialog,
-							Title:   "Update failed",
-							Message: applyErr.Error(),
-						})
+						a.errorDialog("Update failed", applyErr.Error())
 					}
 				}()
 			} else if info.ReleaseURL != "" {
@@ -497,11 +520,7 @@ func (a *App) presentUpdateCheck(info UpdateInfo, offerOpen bool) {
 		}
 		return
 	}
-	_, _ = runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
-		Type:    runtime.InfoDialog,
-		Title:   "No updates",
-		Message: "You're running the latest version (" + info.Current + ").",
-	})
+	a.infoDialog("No updates", "You're running the latest version ("+info.Current+").")
 }
 
 // --- Wails-bound API ---
@@ -875,12 +894,8 @@ func (a *App) ImportLocalAccountsCSV() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if res.Message != "" && a.ctx != nil {
-		_, _ = runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
-			Type:    runtime.InfoDialog,
-			Title:   "Import complete",
-			Message: res.Message,
-		})
+	if res.Message != "" {
+		a.infoDialog("Import complete", res.Message)
 	}
 	return res.Message, nil
 }
@@ -940,6 +955,7 @@ func (a *App) PickLocalAccountsCSVFile() (string, error) {
 	if a.ctx == nil {
 		return "", fmt.Errorf("not ready")
 	}
+	a.prepareNativeDialog()
 	return runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
 		Title: "Select local accounts CSV",
 		Filters: []runtime.FileFilter{
@@ -965,6 +981,7 @@ func (a *App) PickP99ProxyConfigFile(startDir string) (string, error) {
 	if dir := resolveDialogDirectory(startDir); dir != "" {
 		opts.DefaultDirectory = dir
 	}
+	a.prepareNativeDialog()
 	return runtime.OpenFileDialog(a.ctx, opts)
 }
 
@@ -980,6 +997,7 @@ func (a *App) PickP99ProxyDataDirectory(startDir string) (string, error) {
 	if dir := resolveDialogDirectory(startDir); dir != "" {
 		opts.DefaultDirectory = dir
 	}
+	a.prepareNativeDialog()
 	return runtime.OpenDirectoryDialog(a.ctx, opts)
 }
 
@@ -1051,6 +1069,7 @@ func (a *App) ExportLocalAccountsCSV() (string, error) {
 	if a.local == nil || a.ctx == nil {
 		return "", fmt.Errorf("not ready")
 	}
+	a.prepareNativeDialog()
 	path, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
 		Title:           "Export local accounts CSV",
 		DefaultFilename: "local_accounts.csv",
@@ -1076,11 +1095,7 @@ func (a *App) ExportLocalAccountsCSV() (string, error) {
 	}
 	a.logInfo("local accounts exported", "path", path, "count", n)
 	msg := fmt.Sprintf("Exported %d account(s) to %s", n, path)
-	_, _ = runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
-		Type:    runtime.InfoDialog,
-		Title:   "Export complete",
-		Message: msg,
-	})
+	a.infoDialog("Export complete", msg)
 	return msg, nil
 }
 
@@ -1325,7 +1340,7 @@ func (a *App) SSOAdminSetUserAccess(userID int64, revoked bool) error {
 	if userID <= 0 {
 		return fmt.Errorf("user required")
 	}
-	if revoked && a.ctx != nil {
+	if revoked {
 		label := fmt.Sprintf("user #%d", userID)
 		for _, u := range a.sso.Admin().Users {
 			if u.ID == userID {
@@ -1337,18 +1352,15 @@ func (a *App) SSOAdminSetUserAccess(userID int64, revoked bool) error {
 				break
 			}
 		}
-		sel, err := runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
-			Type:          runtime.QuestionDialog,
-			Title:         "Revoke SSO access",
-			Message:       fmt.Sprintf("Revoke SSO access for %s?\n\nThey will be disconnected and cannot create a new token until restored.", label),
-			Buttons:       []string{"Revoke", "Cancel"},
-			DefaultButton: "Cancel",
-			CancelButton:  "Cancel",
-		})
+		ok, err := a.confirmDialog(
+			"Revoke SSO access",
+			fmt.Sprintf("Revoke SSO access for %s?\n\nThey will be disconnected and cannot create a new token until restored.", label),
+			"Revoke",
+		)
 		if err != nil {
 			return err
 		}
-		if !dialogConfirmed(sel, "Revoke") {
+		if !ok {
 			return nil
 		}
 	}
@@ -1662,13 +1674,7 @@ func (a *App) SaveEqHostContent(content string) error {
 		return a.logResult("eqhost.txt save", err, "eq_directory", dir)
 	}
 	a.logInfo("eqhost.txt saved", "eq_directory", dir)
-	if a.ctx != nil {
-		_, _ = runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
-			Type:    runtime.InfoDialog,
-			Title:   "eqhost.txt saved",
-			Message: "Restart EverQuest for eqhost.txt changes to apply.",
-		})
-	}
+	a.infoDialog("eqhost.txt saved", "Restart EverQuest for eqhost.txt changes to apply.")
 	return nil
 }
 
@@ -1682,13 +1688,7 @@ func (a *App) RestoreEqHostBackup() error {
 		return a.logResult("eqhost.txt restore", err, "eq_directory", dir)
 	}
 	a.logInfo("eqhost.txt restored from backup", "eq_directory", dir)
-	if a.ctx != nil {
-		_, _ = runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
-			Type:    runtime.InfoDialog,
-			Title:   "eqhost.txt restored",
-			Message: "Restart EverQuest for the restored eqhost.txt to apply.",
-		})
-	}
+	a.infoDialog("eqhost.txt restored", "Restart EverQuest for the restored eqhost.txt to apply.")
 	return nil
 }
 
@@ -1706,6 +1706,7 @@ func (a *App) PickEQDirectory() (string, error) {
 	if a.ctx == nil {
 		return "", fmt.Errorf("app not ready")
 	}
+	a.prepareNativeDialog()
 	path, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
 		Title:                "Select EverQuest install directory",
 		CanCreateDirectories: false,
@@ -1795,12 +1796,8 @@ func (a *App) startProxy(showEqhostDialog bool) error {
 			a.log.Warn("eqhost", "err", err)
 		} else if changed {
 			a.log.Info("eqhost updated; restart EQ for changes")
-			if showEqhostDialog && a.ctx != nil {
-				_, _ = runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
-					Type:    runtime.InfoDialog,
-					Title:   "eqhost.txt updated",
-					Message: "Restart EverQuest for the proxy host change to apply.",
-				})
+			if showEqhostDialog {
+				a.infoDialog("eqhost.txt updated", "Restart EverQuest for the proxy host change to apply.")
 			}
 		}
 	}
