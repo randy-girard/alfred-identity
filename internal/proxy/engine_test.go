@@ -10,6 +10,7 @@ import (
 	"github.com/alfred-identity/app/internal/localdata"
 	"github.com/alfred-identity/app/internal/protocol"
 	"github.com/alfred-identity/app/internal/router"
+	"github.com/alfred-identity/app/internal/sso"
 )
 
 func TestEngineHandleServerPacketRewritesSeq(t *testing.T) {
@@ -107,7 +108,7 @@ func TestEngineHandleClientLoginFailDoesNotForward(t *testing.T) {
 		t.Fatal("parse")
 	}
 	login.Username = "shared"
-	// Rebuild isn't needed — handleClient parses raw bytes; rewrite username in packet via RewriteCredentials then... 
+	// Rebuild isn't needed — handleClient parses raw bytes; rewrite username in packet via RewriteCredentials then...
 	// Easier: put username "shared" into a packet by rewriting credentials from a parsed login.
 	rewritten, err := login.RewriteCredentials("shared", "x")
 	if err != nil {
@@ -269,4 +270,45 @@ func TestEngineForwardsKeepAliveFromServer(t *testing.T) {
 		t.Fatalf("actions=%#v", actions)
 	}
 	_ = upstream
+}
+
+type engineFakeSSO struct {
+	connected bool
+	names     map[string]bool
+}
+
+func (f engineFakeSSO) Connected() bool { return f.connected }
+func (f engineFakeSSO) NameInMetadata(name string) bool {
+	return f.names[name]
+}
+func (f engineFakeSSO) LoginAuthWithRetry(ctx context.Context, requestID, username string) (sso.LoginAuthResult, error) {
+	return sso.LoginAuthResult{AccountID: 1}, nil
+}
+
+func TestEngineHandleClientSSOSetsSpliceFlag(t *testing.T) {
+	dir := t.TempDir()
+	store := &localdata.Store{
+		AccountsPath:   filepath.Join(dir, "a.csv"),
+		CharactersPath: filepath.Join(dir, "c.csv"),
+	}
+	e := &Engine{
+		Router: &router.Router{
+			Local: store,
+			SSO: engineFakeSSO{
+				connected: true,
+				names:     map[string]bool{"user": true},
+			},
+		},
+	}
+	actions := e.handleClient(context.Background(), combinedLoginPacket(t))
+	if len(actions.SendUpstream) != 1 {
+		t.Fatalf("upstream=%d", len(actions.SendUpstream))
+	}
+	if !actions.SpliceSSO {
+		t.Fatal("SSO login must mark splice for the daemon relay")
+	}
+	parsed, ok := protocol.ParseLoginPacket(actions.SendUpstream[0])
+	if !ok || parsed.Password != "pass" {
+		t.Fatalf("must not splice on the desktop: %+v", parsed)
+	}
 }

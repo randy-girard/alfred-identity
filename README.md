@@ -97,8 +97,8 @@ Set on **Connections** (or the status bar at the bottom):
 
 | Mode | Proxy | SSO | Use when |
 |------|-------|-----|----------|
-| **Login w/ SSO** | On | On | Guild accounts via daemon; local accounts still work |
-| **Login Only** | On | Off | Local CSV accounts only; no guild SSO |
+| **Login w/ SSO** | On | On | Guild accounts via daemon. The **daemon** UDP-connects to the EQ login server and splices passwords there; this PC never receives the DES blob. Local CSV accounts still work. |
+| **Login Only** | On | Off | Local CSV accounts only; this PC talks to the EQ login server (old behavior). |
 | **Disabled** | Off | Off | Not proxying logins |
 
 **Listen port** (default **6998**, `127.0.0.1` only) is on **Settings** → **UDP proxy**. Changing it while the proxy is running restarts the listener.

@@ -21,7 +21,13 @@ Re-sends `full_state` for the authenticated user (after Discord group/account ch
 ```json
 { "type": "login_auth", "request_id": "uuid", "username": "alias-or-character" }
 ```
-Daemon is authoritative: resolve alias → allowed non-disabled accounts → skip busy accounts → return first free.
+Daemon authorizes the login (ACL + busy). Success does **not** include credentials.
+
+### `login_relay_up`
+```json
+{ "type": "login_relay_up", "payload": "<base64 SOE datagram>", "splice": true }
+```
+GUI tunnels login-server UDP through the daemon. `splice` is true only for the Combined login packet.
 
 ### `heartbeat`
 ```json
@@ -56,9 +62,8 @@ Success:
 {
   "type": "login_auth_response",
   "request_id": "uuid",
-  "real_user": "equser",
-  "encrypted_credentials": "<base64 DES-CBC blob>",
-  "account_id": 1
+  "account_id": 1,
+  "relay": true
 }
 ```
 Error:
@@ -66,14 +71,18 @@ Error:
 { "type": "login_auth_response", "request_id": "uuid", "error": "not_found|all_busy|rate_limited|internal" }
 ```
 
-DES wire: username`\0`password`\0`, zero-pad to 8, DES-CBC with key/IV eight zero bytes. Treat blob as a password — ephemeral, TLS only, never log or persist.
+### `login_relay_down`
+```json
+{ "type": "login_relay_down", "payload": "<base64 SOE datagram from EQ login server>" }
+```
+
+### `login_relay_error`
+```json
+{ "type": "login_relay_error", "message": "bad_payload|upstream_unavailable|internal|…" }
+```
 
 ### `error` / `ping`
 ```json
 { "type": "error", "message": "..." }
 { "type": "ping" }
 ```
-
-## Golden DES vector
-
-Plain: `user\0pass\0` (+ zero pad) → cipher hex `575ab3e46810e874f75cb31595902052`

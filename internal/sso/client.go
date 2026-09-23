@@ -2,6 +2,7 @@ package sso
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -147,6 +148,8 @@ type Client struct {
 	connected   bool
 	// keepaliveEvery overrides the default ping interval when > 0 (tests).
 	keepaliveEvery time.Duration
+	downMu         sync.Mutex
+	downHandler    func([]byte)
 }
 
 func NewClient() *Client {
@@ -555,6 +558,25 @@ func (c *Client) readLoop(ctx context.Context) {
 				default:
 				}
 			}
+		case "login_relay_down":
+			var resp struct {
+				Payload string `json:"payload"`
+			}
+			if json.Unmarshal(data, &resp) != nil {
+				continue
+			}
+			pkt, err := base64.StdEncoding.DecodeString(resp.Payload)
+			if err != nil || len(pkt) == 0 {
+				continue
+			}
+			c.downMu.Lock()
+			fn := c.downHandler
+			c.downMu.Unlock()
+			if fn != nil {
+				fn(pkt)
+			}
+		case "login_relay_error":
+			// Logged by GUI if it has a logger; keep the session up.
 		case "ping":
 			c.mu.Lock()
 			conn := c.conn
@@ -597,6 +619,39 @@ func (c *Client) writeJSON(ctx context.Context, conn *websocket.Conn, v any) err
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 	return conn.Write(ctx, websocket.MessageText, msg)
+}
+
+// SetLoginRelayDown registers the handler for daemon → GUI login UDP datagrams.
+func (c *Client) SetLoginRelayDown(fn func([]byte)) {
+	c.downMu.Lock()
+	c.downHandler = fn
+	c.downMu.Unlock()
+}
+
+// Active reports whether SSO is connected and can tunnel login UDP.
+func (c *Client) Active() bool {
+	if c == nil {
+		return false
+	}
+	return c.Connected()
+}
+
+// SendUpstream tunnels a wire SOE datagram to the daemon login relay.
+func (c *Client) SendUpstream(pkt []byte, splice bool) error {
+	c.mu.Lock()
+	conn := c.conn
+	ok := c.connected && conn != nil
+	c.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("sso login relay not connected")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return c.writeJSON(ctx, conn, map[string]any{
+		"type":    "login_relay_up",
+		"payload": base64.StdEncoding.EncodeToString(pkt),
+		"splice":  splice,
+	})
 }
 
 func (c *Client) LoginAuth(ctx context.Context, requestID, username string) (LoginAuthResult, error) {

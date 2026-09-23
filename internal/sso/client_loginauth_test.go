@@ -36,11 +36,10 @@ func TestLoginAuthRoundTrip(t *testing.T) {
 			return
 		}
 		resp, _ := json.Marshal(map[string]any{
-			"type":                   "login_auth_response",
-			"request_id":             msg.RequestID,
-			"real_user":              "realuser",
-			"encrypted_credentials":  "YQ==",
-			"account_id":             42,
+			"type":       "login_auth_response",
+			"request_id": msg.RequestID,
+			"account_id": 42,
+			"relay":      true,
 		})
 		_ = conn.Write(ctx, websocket.MessageText, resp)
 	}))
@@ -63,7 +62,7 @@ func TestLoginAuthRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.RealUser != "realuser" || res.CipherB64 != "YQ==" || res.AccountID != 42 || res.Error != "" {
+	if res.AccountID != 42 || res.Error != "" || res.CipherB64 != "" {
 		t.Fatalf("res=%+v", res)
 	}
 }
@@ -696,5 +695,72 @@ func TestShareAccountRoundTrip(t *testing.T) {
 	res, err := c.ShareAccount(ctx, "box", "pw", nil, nil, nil, nil)
 	if err != nil || !res.OK || res.AccountID != 5 {
 		t.Fatalf("res=%+v err=%v", res, err)
+	}
+}
+
+func TestLoginRelayDownInvokesHandler(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	up := make(chan []byte, 1)
+	wsURL, cleanup := startMockSSOServer(t, func(typ string, data []byte) map[string]any {
+		switch typ {
+		case "auth":
+			return fullStateMessage(false)
+		case "login_relay_up":
+			var msg struct {
+				Payload string `json:"payload"`
+				Splice  bool   `json:"splice"`
+			}
+			_ = json.Unmarshal(data, &msg)
+			if !msg.Splice {
+				t.Error("expected splice=true")
+			}
+			select {
+			case up <- []byte(msg.Payload):
+			default:
+			}
+			return map[string]any{
+				"type":    "login_relay_down",
+				"payload": msg.Payload,
+			}
+		default:
+			return nil
+		}
+	})
+	defer cleanup()
+
+	c := NewClient()
+	got := make(chan []byte, 1)
+	c.SetLoginRelayDown(func(pkt []byte) {
+		select {
+		case got <- pkt:
+		default:
+		}
+	})
+	if err := c.Connect(ctx, wsURL, "token", "gui/test"); err != nil {
+		t.Fatal(err)
+	}
+	defer c.Disconnect()
+	waitForSSOState(t, c, false)
+
+	if !c.Active() {
+		t.Fatal("expected active relay")
+	}
+	if err := c.SendUpstream([]byte{0x00, 0x01, 0x02}, true); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-up:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected login_relay_up")
+	}
+	select {
+	case pkt := <-got:
+		if string(pkt) != string([]byte{0x00, 0x01, 0x02}) {
+			t.Fatalf("down=%x", pkt)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected login_relay_down handler")
 	}
 }

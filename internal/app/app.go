@@ -104,16 +104,16 @@ func (a *App) errorDialog(title, message string) {
 
 // App is the native Wails backend.
 type App struct {
-	ctx       context.Context
-	log       *slog.Logger
-	logBuf    *logbuf.Buffer
-	cfg       *sources.Manager
-	local     *localdata.Store
-	sso       *sso.Client
-	proxy     *proxy.Server
-	watcher   *logwatch.Watcher
-	hbCancel  context.CancelFunc
-	quitting  atomic.Bool
+	ctx      context.Context
+	log      *slog.Logger
+	logBuf   *logbuf.Buffer
+	cfg      *sources.Manager
+	local    *localdata.Store
+	sso      *sso.Client
+	proxy    *proxy.Server
+	watcher  *logwatch.Watcher
+	hbCancel context.CancelFunc
+	quitting atomic.Bool
 }
 
 // globalApp lets the macOS status-item C callbacks reach the running App.
@@ -526,25 +526,25 @@ func (a *App) presentUpdateCheck(info UpdateInfo, offerOpen bool) {
 // --- Wails-bound API ---
 
 type StatusDTO struct {
-	Version         string               `json:"version"`
-	ConnectionMode  string               `json:"connection_mode"`
-	ProxyEnabled    bool                 `json:"proxy_enabled"`
-	SSOConnected    bool                 `json:"sso_connected"`
-	SSOIsAdmin      bool                 `json:"sso_is_admin"`
-	SSOUserID       int64                `json:"sso_user_id"`
-	ActiveSource    string               `json:"active_source"`
-	Online          []string             `json:"online"`
-	EQDirectory     string               `json:"eq_directory"`
-	Listen          string               `json:"listen"`
-	SSOAccounts     []sso.AccountMeta    `json:"sso_accounts"`
-	SSOOnline       []sso.OnlineEntry    `json:"sso_online"`
-	SSODirectory    []sso.DirectoryUser  `json:"sso_directory"`
-	SSOGroups       []sso.GroupDetail    `json:"sso_groups"`
-	SSORoles        []sso.DiscordRole    `json:"sso_roles"`
-	SSOAdminUsers   []sso.AdminUser      `json:"sso_admin_users"`
-	SSOAdminRoles   []sso.DiscordRole    `json:"sso_admin_roles"`
-	ShareActivity   sso.ShareActivity    `json:"share_activity"`
-	Sources         []SourceDTO          `json:"sources"`
+	Version        string              `json:"version"`
+	ConnectionMode string              `json:"connection_mode"`
+	ProxyEnabled   bool                `json:"proxy_enabled"`
+	SSOConnected   bool                `json:"sso_connected"`
+	SSOIsAdmin     bool                `json:"sso_is_admin"`
+	SSOUserID      int64               `json:"sso_user_id"`
+	ActiveSource   string              `json:"active_source"`
+	Online         []string            `json:"online"`
+	EQDirectory    string              `json:"eq_directory"`
+	Listen         string              `json:"listen"`
+	SSOAccounts    []sso.AccountMeta   `json:"sso_accounts"`
+	SSOOnline      []sso.OnlineEntry   `json:"sso_online"`
+	SSODirectory   []sso.DirectoryUser `json:"sso_directory"`
+	SSOGroups      []sso.GroupDetail   `json:"sso_groups"`
+	SSORoles       []sso.DiscordRole   `json:"sso_roles"`
+	SSOAdminUsers  []sso.AdminUser     `json:"sso_admin_users"`
+	SSOAdminRoles  []sso.DiscordRole   `json:"sso_admin_roles"`
+	ShareActivity  sso.ShareActivity   `json:"share_activity"`
+	Sources        []SourceDTO         `json:"sources"`
 }
 
 // SourceDTO is a token-safe view of an SSO source for the UI.
@@ -655,15 +655,15 @@ func (a *App) GetStatus() StatusDTO {
 }
 
 type LocalAccountDTO struct {
-	Name            string   `json:"name"`
-	Password        string   `json:"password"`
-	Aliases         []string `json:"aliases"`
-	HasPass         bool     `json:"has_password"`
-	Shared          bool     `json:"shared"`
-	SharedUserIDs   []int64  `json:"shared_user_ids"`
-	SharedRoleIDs   []string `json:"shared_role_ids"`
-	SharedGroupIDs  []int64  `json:"shared_group_ids"`
-	SharedSSOAcct   int64    `json:"shared_sso_account_id"`
+	Name           string   `json:"name"`
+	Password       string   `json:"password"`
+	Aliases        []string `json:"aliases"`
+	HasPass        bool     `json:"has_password"`
+	Shared         bool     `json:"shared"`
+	SharedUserIDs  []int64  `json:"shared_user_ids"`
+	SharedRoleIDs  []string `json:"shared_role_ids"`
+	SharedGroupIDs []int64  `json:"shared_group_ids"`
+	SharedSSOAcct  int64    `json:"shared_sso_account_id"`
 	InUse          bool     `json:"in_use"`
 	InUseBy        string   `json:"in_use_by,omitempty"`
 	InUseOther     bool     `json:"in_use_other"`
@@ -1783,8 +1783,18 @@ func (a *App) startProxy(showEqhostDialog bool) error {
 	}
 	cfg := a.cfg.Get()
 	r := &router.Router{Local: a.local, SSO: a.sso, Log: a.log, BusyFn: a.busyLocal}
+	if a.sso != nil {
+		a.sso.SetLoginRelayDown(func(pkt []byte) {
+			if a.proxy != nil {
+				a.proxy.InjectFromLoginServer(pkt)
+			}
+		})
+	}
 	a.proxy = &proxy.Server{
 		Listen: cfg.ListenAddr, Upstream: cfg.UpstreamAddr, Router: r, Log: a.log,
+	}
+	if a.sso != nil {
+		a.proxy.Relay = a.sso
 	}
 	if err := a.proxy.Start(a.ctx); err != nil {
 		return a.logResult("UDP proxy start", err, "listen", cfg.ListenAddr)

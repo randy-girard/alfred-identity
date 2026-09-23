@@ -10,15 +10,26 @@ import (
 	"github.com/alfred-identity/app/internal/router"
 )
 
+// LoginRelay sends SOE datagrams to the daemon (which owns the EQ login UDP
+// socket) and receives downlink packets to inject as if they came from upstream.
+type LoginRelay interface {
+	Active() bool
+	SendUpstream(pkt []byte, splice bool) error
+}
+
 // Server is a UDP middleman between EQ client and the login server.
 type Server struct {
 	Listen   string
 	Upstream string
 	Router   *router.Router
 	Log      *slog.Logger
+	Relay    LoginRelay
 
-	conn   *net.UDPConn
 	mu     sync.Mutex
+	conn   *net.UDPConn
+	engine *Engine
+	upAddr *net.UDPAddr
+	runCtx context.Context
 	cancel context.CancelFunc
 }
 
@@ -50,17 +61,24 @@ func (s *Server) Start(parent context.Context) error {
 	}
 
 	ctx, cancel := context.WithCancel(parent)
+	engine := &Engine{Router: s.Router, Log: log}
 	s.mu.Lock()
 	s.conn = c
 	s.cancel = cancel
+	s.engine = engine
+	s.upAddr = upAddr
+	s.runCtx = ctx
 	s.mu.Unlock()
 
+	via := "direct UDP"
+	if s.relayActive() {
+		via = "SSO login relay (daemon owns EQ login UDP)"
+	}
 	log.Info("UDP login proxy listening",
 		"configured", s.Listen,
 		"bound", c.LocalAddr().String(),
-		"upstream", s.Upstream)
-
-	engine := &Engine{Router: s.Router, Log: log}
+		"upstream", s.Upstream,
+		"via", via)
 
 	go func() {
 		defer c.Close()
@@ -82,13 +100,9 @@ func (s *Server) Start(parent context.Context) error {
 			pkt := append([]byte{}, buf[:n]...)
 
 			actions := engine.OnDatagram(ctx, pkt, peer, upAddr)
-			client := engine.ClientAddr()
+			s.dispatch(engine, upAddr, actions)
 
-			for _, out := range engine.Finalize(actions.SendUpstream) {
-				if _, err := c.WriteToUDP(out, upAddr); err != nil {
-					log.Warn("send to upstream failed", "err", err)
-				}
-			}
+			client := engine.ClientAddr()
 			if client == nil {
 				continue
 			}
@@ -109,7 +123,7 @@ func (s *Server) Start(parent context.Context) error {
 				return
 			case <-t.C:
 				if pkt := engine.UpstreamKeepalivePacket(); pkt != nil {
-					if _, err := c.WriteToUDP(pkt, upAddr); err != nil {
+					if err := s.sendUpstream(pkt, false); err != nil {
 						log.Warn("idle keepalive to upstream failed", "err", err)
 					}
 				}
@@ -117,6 +131,64 @@ func (s *Server) Start(parent context.Context) error {
 		}
 	}()
 	return nil
+}
+
+func (s *Server) relayActive() bool {
+	if s.Relay == nil {
+		return false
+	}
+	return s.Relay.Active()
+}
+
+func (s *Server) dispatch(engine *Engine, upAddr *net.UDPAddr, actions Actions) {
+	for _, out := range engine.Finalize(actions.SendUpstream) {
+		if err := s.sendUpstream(out, actions.SpliceSSO); err != nil && s.Log != nil {
+			s.Log.Warn("send to upstream failed", "err", err)
+		}
+	}
+	_ = upAddr
+}
+
+func (s *Server) sendUpstream(pkt []byte, splice bool) error {
+	if s.relayActive() {
+		return s.Relay.SendUpstream(pkt, splice)
+	}
+	s.mu.Lock()
+	c := s.conn
+	up := s.upAddr
+	s.mu.Unlock()
+	if c == nil || up == nil {
+		return net.ErrClosed
+	}
+	_, err := c.WriteToUDP(pkt, up)
+	return err
+}
+
+// InjectFromLoginServer treats pkt as a datagram from the EQ login server
+// (used when the daemon tunnels login_relay_down).
+func (s *Server) InjectFromLoginServer(pkt []byte) {
+	s.mu.Lock()
+	c := s.conn
+	engine := s.engine
+	ctx := s.runCtx
+	up := s.upAddr
+	s.mu.Unlock()
+	if c == nil || engine == nil || up == nil {
+		return
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	actions := engine.OnDatagram(ctx, pkt, up, up)
+	client := engine.ClientAddr()
+	if client == nil {
+		return
+	}
+	for _, out := range engine.Finalize(actions.SendClient) {
+		if _, err := c.WriteToUDP(out, client); err != nil && s.Log != nil {
+			s.Log.Warn("send to client failed", "err", err)
+		}
+	}
 }
 
 func (s *Server) Stop() {
@@ -130,6 +202,7 @@ func (s *Server) Stop() {
 		_ = s.conn.Close()
 		s.conn = nil
 	}
+	s.engine = nil
 }
 
 func isUpstreamPeer(peer, upstream *net.UDPAddr) bool {

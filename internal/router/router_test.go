@@ -124,6 +124,10 @@ func TestHandleLoginPacketSSO(t *testing.T) {
 	if fake.calls != 1 || fake.lastUser != "user" {
 		t.Fatalf("login_auth calls=%d user=%q", fake.calls, fake.lastUser)
 	}
+	parsed, ok := protocol.ParseLoginPacket(res.Packet)
+	if !ok || parsed.Username != "user" || parsed.Password != "pass" {
+		t.Fatalf("SSO must forward the alias packet unspliced, got user=%q pass=%q", parsed.Username, parsed.Password)
+	}
 }
 
 func TestHandleLoginPacketSSOPrefersDaemonOverLocalCSV(t *testing.T) {
@@ -150,6 +154,10 @@ func TestHandleLoginPacketSSOPrefersDaemonOverLocalCSV(t *testing.T) {
 	}
 	if fake.calls != 1 {
 		t.Fatalf("expected login_auth, calls=%d", fake.calls)
+	}
+	parsed, ok := protocol.ParseLoginPacket(res.Packet)
+	if !ok || parsed.Password == "local-secret" {
+		t.Fatalf("must not splice local CSV password onto SSO path: %+v", parsed)
 	}
 }
 
@@ -224,18 +232,6 @@ func TestHandleLoginPacketLocalBusyAndSSOErrors(t *testing.T) {
 	res = r.HandleLoginPacket(context.Background(), login)
 	if res.Decision != DecisionFail || res.Message != "sso: denied" {
 		t.Fatalf("sso denied: %+v", res)
-	}
-
-	fake = &fakeSSO{
-		connected: true,
-		names:     map[string]bool{"guild": true},
-		result:    sso.LoginAuthResult{CipherB64: "%%%"},
-	}
-	r = &Router{Local: store, SSO: fake}
-	login.Username = "guild"
-	res = r.HandleLoginPacket(context.Background(), login)
-	if res.Decision != DecisionFail || res.Message != "bad cipher" {
-		t.Fatalf("bad cipher: %+v", res)
 	}
 
 	_ = store.UpsertAccount("a1", "p", []string{"shared"})

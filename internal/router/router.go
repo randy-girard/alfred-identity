@@ -2,14 +2,13 @@ package router
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"log/slog"
 
-	"github.com/google/uuid"
 	"github.com/alfred-identity/app/internal/localdata"
 	"github.com/alfred-identity/app/internal/protocol"
 	"github.com/alfred-identity/app/internal/sso"
+	"github.com/google/uuid"
 )
 
 type Decision string
@@ -85,23 +84,9 @@ func (r *Router) loginViaSSO(ctx context.Context, login *protocol.LoginPacket, t
 		}
 		return Result{Decision: DecisionFail, Message: "sso: " + res.Error}
 	}
-	cipher, err := base64.StdEncoding.DecodeString(res.CipherB64)
-	if err != nil {
-		return Result{Decision: DecisionFail, Message: "bad cipher"}
-	}
-	defer wipeBytes(cipher)
-
-	out, err := login.SpliceEncryptedCredentials(cipher)
-	if err != nil {
-		return Result{Decision: DecisionFail, Message: err.Error()}
-	}
-	return Result{Decision: DecisionSSO, Packet: out}
-}
-
-func wipeBytes(b []byte) {
-	for i := range b {
-		b[i] = 0
-	}
+	// Daemon splices vault credentials on its UDP socket. Forward the alias
+	// packet unchanged so the workstation never holds the real password.
+	return Result{Decision: DecisionSSO, Packet: login.Buf}
 }
 
 func wipeLoginAuthResult(res *sso.LoginAuthResult) {

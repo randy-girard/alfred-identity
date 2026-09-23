@@ -2,7 +2,6 @@ package router
 
 import (
 	"context"
-	"encoding/base64"
 	"path/filepath"
 	"testing"
 
@@ -18,38 +17,30 @@ func TestHandleLoginPacketNil(t *testing.T) {
 	}
 }
 
-func TestHandleLoginPacketSSOSpliceError(t *testing.T) {
+func TestHandleLoginPacketSSODoesNotSplice(t *testing.T) {
 	dir := t.TempDir()
 	store := &localdata.Store{
 		AccountsPath:   filepath.Join(dir, "a.csv"),
 		CharactersPath: filepath.Join(dir, "c.csv"),
 	}
-	huge := make([]byte, 300)
-	for i := range huge {
-		huge[i] = 'A'
-	}
 	fake := &fakeSSO{
 		connected: true,
-		names:     map[string]bool{"guild": true},
-		result:    sso.LoginAuthResult{CipherB64: base64.StdEncoding.EncodeToString(huge)},
+		names:     map[string]bool{"user": true},
+		result:    sso.LoginAuthResult{AccountID: 9},
 	}
 	r := &Router{Local: store, SSO: fake}
 	login := testLoginPacket(t)
-	login.Username = "guild"
+	orig := append([]byte{}, login.Buf...)
 	res := r.HandleLoginPacket(context.Background(), login)
-	if res.Decision != DecisionFail || res.Message == "" {
-		t.Fatalf("expected splice fail: %+v", res)
+	if res.Decision != DecisionSSO {
+		t.Fatalf("%+v", res)
+	}
+	if string(res.Packet) != string(orig) {
+		t.Fatal("SSO path must forward the original alias packet")
 	}
 }
 
 func TestWipeHelpers(t *testing.T) {
-	b := []byte("secret")
-	wipeBytes(b)
-	for _, c := range b {
-		if c != 0 {
-			t.Fatal("wipeBytes")
-		}
-	}
 	res := sso.LoginAuthResult{RealUser: "u", CipherB64: "x"}
 	wipeLoginAuthResult(&res)
 	if res.RealUser != "" || res.CipherB64 != "" {

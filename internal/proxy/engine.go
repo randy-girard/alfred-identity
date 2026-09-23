@@ -32,6 +32,9 @@ type Engine struct {
 type Actions struct {
 	SendClient   [][]byte
 	SendUpstream [][]byte
+	// SpliceSSO is true when SendUpstream holds an SSO Combined login that the
+	// daemon must credential-splice. Other upstream packets leave this false.
+	SpliceSSO bool
 }
 
 func (e *Engine) ClientAddr() *net.UDPAddr {
@@ -117,6 +120,9 @@ func (e *Engine) handleClient(ctx context.Context, data []byte) Actions {
 				return actions
 			default:
 				outbound = res.Packet
+				if res.Decision == router.DecisionSSO {
+					actions.SpliceSSO = true
+				}
 				if e.Log != nil {
 					e.Log.Info("login routed", "decision", string(res.Decision), "user", login.Username)
 				}
