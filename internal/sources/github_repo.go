@@ -6,6 +6,7 @@ import "strings"
 var legacyGitHubRepos = map[string]bool{
 	"alfred-identity/app":              true,
 	"p99-identity/gui":                 true,
+	"randy-girard/alfred-identity":     true,
 	"randy-girard/alfred-identity-gui": true,
 }
 

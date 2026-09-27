@@ -15,7 +15,7 @@ import (
 const DefaultWSPath = "/ws/sso"
 
 // DefaultGitHubRepo is the owner/repo used for release update checks.
-const DefaultGitHubRepo = "randy-girard/alfred-identity"
+const DefaultGitHubRepo = "goodguysguild/alfred-identity"
 
 // ConnectionMode controls the UDP proxy and SSO client.
 type ConnectionMode string

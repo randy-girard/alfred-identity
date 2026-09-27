@@ -13,7 +13,8 @@ func TestResolveGitHubRepo(t *testing.T) {
 		{"p99-identity/gui", DefaultGitHubRepo},
 		{"P99-Identity/GUI", DefaultGitHubRepo},
 		{"alfred-identity/app", DefaultGitHubRepo},
-		{"randy-girard/alfred-identity", "randy-girard/alfred-identity"},
+		{"randy-girard/alfred-identity", DefaultGitHubRepo},
+		{"randy-girard/alfred-identity-gui", DefaultGitHubRepo},
 		{"acme/custom", "acme/custom"},
 	}
 	for _, tc := range tests {

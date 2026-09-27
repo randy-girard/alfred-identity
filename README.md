@@ -1,6 +1,6 @@
 # Alfred Identity
 
-Native desktop GUI ([Wails v2](https://wails.io)) — local UDP login proxy and SSO client for **[alfred-identity-backend](https://github.com/randy-girard/alfred-identity-backend)**.
+Native desktop GUI ([Wails v2](https://wails.io)) — local UDP login proxy and SSO client for **[alfred-identity-backend](https://github.com/goodguysguild/alfred-identity-backend)**.
 
 The app runs in the **menu bar** (macOS) or **system tray** (Windows/Linux). Closing the window hides it; the proxy and SSO connection keep running until you quit.
 

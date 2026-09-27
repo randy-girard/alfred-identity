@@ -83,7 +83,7 @@ func TestMigrateLegacyProxyAndURL(t *testing.T) {
 
 func TestMigrateLegacyGitHubRepo(t *testing.T) {
 	dir := t.TempDir()
-	for _, legacy := range []string{"alfred-identity/app", "p99-identity/gui"} {
+	for _, legacy := range []string{"alfred-identity/app", "p99-identity/gui", "randy-girard/alfred-identity"} {
 		t.Run(legacy, func(t *testing.T) {
 			p := filepath.Join(dir, strings.ReplaceAll(legacy, "/", "_")+".json")
 			raw := `{"github_repo":"` + legacy + `"}`
