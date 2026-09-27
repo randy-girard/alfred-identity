@@ -21,9 +21,9 @@ const DefaultGitHubRepo = "randy-girard/alfred-identity"
 type ConnectionMode string
 
 const (
-	ConnectionDisabled  ConnectionMode = "disabled"    // proxy off, SSO off
-	ConnectionLoginOnly ConnectionMode = "login_only"  // proxy on, local + passthrough only
-	ConnectionLoginSSO  ConnectionMode = "login_sso"   // proxy on + SSO
+	ConnectionDisabled  ConnectionMode = "disabled"   // proxy off, SSO off
+	ConnectionLoginOnly ConnectionMode = "login_only" // proxy on, local + passthrough only
+	ConnectionLoginSSO  ConnectionMode = "login_sso"  // proxy on + SSO
 )
 
 func NormalizeConnectionMode(m ConnectionMode) ConnectionMode {
@@ -67,12 +67,17 @@ type Source struct {
 }
 
 type Config struct {
-	Sources         []Source       `json:"sources"`
-	ActiveSourceID  string         `json:"active_source_id"`
-	EQDirectory     string         `json:"eq_directory"`
-	ListenAddr      string         `json:"listen_addr"`
-	UpstreamAddr    string         `json:"upstream_addr"`
-	ConnectionMode  ConnectionMode `json:"connection_mode"`
+	Sources        []Source       `json:"sources"`
+	ActiveSourceID string         `json:"active_source_id"`
+	EQDirectory    string         `json:"eq_directory"`
+	ListenAddr     string         `json:"listen_addr"`
+	UpstreamAddr   string         `json:"upstream_addr"`
+	ConnectionMode ConnectionMode `json:"connection_mode"`
+	// AllowOfflineEQPassword lets Login w/ SSO pass typed EQ credentials
+	// straight to the login server when Alfred SSO is disconnected.
+	// Local CSV accounts are unchanged. While SSO is connected, unknown
+	// names are never sent through the relay.
+	AllowOfflineEQPassword bool `json:"allow_offline_eq_password"`
 	// ProxyEnabled is legacy; migrated into ConnectionMode on load.
 	ProxyEnabled  bool   `json:"proxy_enabled,omitempty"`
 	AccountsCSV   string `json:"accounts_csv"`
@@ -340,10 +345,12 @@ func preferPlainWS(hostport string) bool {
 
 // ParseImportSources reads one or more distributable SSO source definitions from JSON.
 // Accepted shapes:
-//   {"name","host","token?","notes?"}
-//   {"source":{...}}
-//   {"sources":[{...}, ...]}
-//   [{...}, ...]
+//
+//	{"name","host","token?","notes?"}
+//	{"source":{...}}
+//	{"sources":[{...}, ...]}
+//	[{...}, ...]
+//
 // Internal "id" fields are ignored (a new id is assigned on save).
 func ParseImportSources(data []byte) ([]Source, error) {
 	data = bytes.TrimSpace(data)

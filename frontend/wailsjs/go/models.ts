@@ -157,6 +157,7 @@ export namespace app {
 	    online: string[];
 	    eq_directory: string;
 	    listen: string;
+	    allow_offline_eq_password: boolean;
 	    sso_accounts: sso.AccountMeta[];
 	    sso_online: sso.OnlineEntry[];
 	    sso_directory: sso.DirectoryUser[];
@@ -183,6 +184,7 @@ export namespace app {
 	        this.online = source["online"];
 	        this.eq_directory = source["eq_directory"];
 	        this.listen = source["listen"];
+	        this.allow_offline_eq_password = source["allow_offline_eq_password"];
 	        this.sso_accounts = this.convertValues(source["sso_accounts"], sso.AccountMeta);
 	        this.sso_online = this.convertValues(source["sso_online"], sso.OnlineEntry);
 	        this.sso_directory = this.convertValues(source["sso_directory"], sso.DirectoryUser);

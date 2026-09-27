@@ -35,6 +35,19 @@ func TestLoadSaveRoundTrip(t *testing.T) {
 	if cfg.ActiveSourceID != "1" || cfg.ConnectionMode != ConnectionLoginSSO {
 		t.Fatalf("%#v", cfg)
 	}
+	if cfg.AllowOfflineEQPassword {
+		t.Fatal("offline EQ password must default off")
+	}
+	if err := m2.Update(func(c *Config) { c.AllowOfflineEQPassword = true }); err != nil {
+		t.Fatal(err)
+	}
+	m3, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m3.Get().AllowOfflineEQPassword {
+		t.Fatal("allow offline EQ password did not persist")
+	}
 	src, ok := m2.Active()
 	if !ok || !src.CanConnect() {
 		t.Fatalf("active %#v ok=%v", src, ok)

@@ -35,6 +35,8 @@ func (a *App) hideWindow() {
 
 func (a *App) activateForNativeDialog() {}
 
+func (a *App) waitForNativeDialogPrep() {}
+
 func (a *App) OnBeforeClose(_ context.Context) bool {
 	if a.quitting.Load() {
 		return false

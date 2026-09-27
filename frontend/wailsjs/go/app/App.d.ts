@@ -26,9 +26,9 @@ export function ExportLocalAccountsCSV():Promise<string>;
 
 export function GetEqHostState():Promise<app.EqHostState>;
 
-export function GetLocalAccounts():Promise<Array<app.LocalAccountDTO>>;
-
 export function GetLocalAccountPassword(arg1:string):Promise<string>;
+
+export function GetLocalAccounts():Promise<Array<app.LocalAccountDTO>>;
 
 export function GetLocalCharacters():Promise<Array<app.LocalCharacterDTO>>;
 
@@ -97,6 +97,8 @@ export function SaveSource(arg1:sources.Source):Promise<app.SourceDTO>;
 export function ScanP99LoginProxyInstalls():Promise<Array<app.P99ProxyInstallDTO>>;
 
 export function SetActiveSource(arg1:string):Promise<void>;
+
+export function SetAllowOfflineEQPassword(arg1:boolean):Promise<void>;
 
 export function SetConnectionMode(arg1:string):Promise<void>;
 

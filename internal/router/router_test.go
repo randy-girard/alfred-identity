@@ -100,6 +100,82 @@ func TestHandleLoginPacketPassthrough(t *testing.T) {
 	}
 }
 
+func TestHandleLoginPacketSSOConnectedBlocksUnknownPassthrough(t *testing.T) {
+	dir := t.TempDir()
+	store := &localdata.Store{
+		AccountsPath:   filepath.Join(dir, "a.csv"),
+		CharactersPath: filepath.Join(dir, "c.csv"),
+	}
+	fake := &fakeSSO{connected: true, names: map[string]bool{"other": true}}
+	r := &Router{Local: store, SSO: fake}
+	res := r.HandleLoginPacket(context.Background(), testLoginPacket(t))
+	if res.Decision != DecisionFail {
+		t.Fatalf("unknown name must not go through the relay: %+v", res)
+	}
+}
+
+func TestHandleLoginPacketSSOOfflineBlocksPassthroughWhenDisallowed(t *testing.T) {
+	dir := t.TempDir()
+	store := &localdata.Store{
+		AccountsPath:   filepath.Join(dir, "a.csv"),
+		CharactersPath: filepath.Join(dir, "c.csv"),
+	}
+	r := &Router{
+		Local:                  store,
+		SSO:                    &fakeSSO{connected: false},
+		SSOModeFn:              func() bool { return true },
+		AllowOfflinePasswordFn: func() bool { return false },
+	}
+	res := r.HandleLoginPacket(context.Background(), testLoginPacket(t))
+	if res.Decision != DecisionFail {
+		t.Fatalf("expected fail when SSO down and setting off: %+v", res)
+	}
+}
+
+func TestHandleLoginPacketSSOOfflineAllowsPassthroughWhenAllowed(t *testing.T) {
+	dir := t.TempDir()
+	store := &localdata.Store{
+		AccountsPath:   filepath.Join(dir, "a.csv"),
+		CharactersPath: filepath.Join(dir, "c.csv"),
+	}
+	login := testLoginPacket(t)
+	r := &Router{
+		Local:                  store,
+		SSO:                    &fakeSSO{connected: false},
+		SSOModeFn:              func() bool { return true },
+		AllowOfflinePasswordFn: func() bool { return true },
+	}
+	res := r.HandleLoginPacket(context.Background(), login)
+	if res.Decision != DecisionPassthrough || string(res.Packet) != string(login.Buf) {
+		t.Fatalf("%+v", res)
+	}
+}
+
+func TestHandleLoginPacketSSOOfflineLocalUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	store := &localdata.Store{
+		AccountsPath:   filepath.Join(dir, "a.csv"),
+		CharactersPath: filepath.Join(dir, "c.csv"),
+	}
+	if err := store.UpsertAccount("user", "secret", nil); err != nil {
+		t.Fatal(err)
+	}
+	r := &Router{
+		Local:                  store,
+		SSO:                    &fakeSSO{connected: false},
+		SSOModeFn:              func() bool { return true },
+		AllowOfflinePasswordFn: func() bool { return false },
+	}
+	res := r.HandleLoginPacket(context.Background(), testLoginPacket(t))
+	if res.Decision != DecisionLocal || len(res.Packet) == 0 {
+		t.Fatalf("local CSV must still work while SSO is down: %+v", res)
+	}
+	parsed, ok := protocol.ParseLoginPacket(res.Packet)
+	if !ok || parsed.Password != "secret" {
+		t.Fatalf("expected local splice, got %+v", parsed)
+	}
+}
+
 func TestHandleLoginPacketSSO(t *testing.T) {
 	dir := t.TempDir()
 	store := &localdata.Store{

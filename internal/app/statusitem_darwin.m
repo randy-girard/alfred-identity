@@ -148,6 +148,13 @@ void AISetDockVisible(int visible) {
 	}
 }
 
+void AIWaitMainQueue(void) {
+	if ([NSThread isMainThread]) {
+		return;
+	}
+	dispatch_sync(dispatch_get_main_queue(), ^{});
+}
+
 void AIForceShowMainWindow(void) {
 	void (^block)(void) = ^{
 		[NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];

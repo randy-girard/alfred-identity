@@ -52,6 +52,7 @@ func dialogConfirmed(selection string, accept ...string) bool {
 func (a *App) prepareNativeDialog() {
 	a.activateForNativeDialog()
 	a.showWindowForDialog()
+	a.waitForNativeDialogPrep()
 }
 
 // confirmDialog shows a native question dialog. accept is the primary button label
@@ -77,15 +78,19 @@ func (a *App) confirmDialog(title, message, accept string) (bool, error) {
 }
 
 // infoDialog shows a native info dialog that the user must dismiss.
+// Buttons must be set: on macOS Wails only adds the buttons we pass, so a missing
+// OK leaves a decorative default that does not end the modal.
 func (a *App) infoDialog(title, message string) {
 	if a.ctx == nil {
 		return
 	}
 	a.prepareNativeDialog()
 	_, _ = runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
-		Type:    runtime.InfoDialog,
-		Title:   title,
-		Message: message,
+		Type:          runtime.InfoDialog,
+		Title:         title,
+		Message:       message,
+		Buttons:       []string{"OK"},
+		DefaultButton: "OK",
 	})
 }
 
@@ -96,9 +101,11 @@ func (a *App) errorDialog(title, message string) {
 	}
 	a.prepareNativeDialog()
 	_, _ = runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
-		Type:    runtime.ErrorDialog,
-		Title:   title,
-		Message: message,
+		Type:          runtime.ErrorDialog,
+		Title:         title,
+		Message:       message,
+		Buttons:       []string{"OK"},
+		DefaultButton: "OK",
 	})
 }
 
@@ -526,25 +533,26 @@ func (a *App) presentUpdateCheck(info UpdateInfo, offerOpen bool) {
 // --- Wails-bound API ---
 
 type StatusDTO struct {
-	Version        string              `json:"version"`
-	ConnectionMode string              `json:"connection_mode"`
-	ProxyEnabled   bool                `json:"proxy_enabled"`
-	SSOConnected   bool                `json:"sso_connected"`
-	SSOIsAdmin     bool                `json:"sso_is_admin"`
-	SSOUserID      int64               `json:"sso_user_id"`
-	ActiveSource   string              `json:"active_source"`
-	Online         []string            `json:"online"`
-	EQDirectory    string              `json:"eq_directory"`
-	Listen         string              `json:"listen"`
-	SSOAccounts    []sso.AccountMeta   `json:"sso_accounts"`
-	SSOOnline      []sso.OnlineEntry   `json:"sso_online"`
-	SSODirectory   []sso.DirectoryUser `json:"sso_directory"`
-	SSOGroups      []sso.GroupDetail   `json:"sso_groups"`
-	SSORoles       []sso.DiscordRole   `json:"sso_roles"`
-	SSOAdminUsers  []sso.AdminUser     `json:"sso_admin_users"`
-	SSOAdminRoles  []sso.DiscordRole   `json:"sso_admin_roles"`
-	ShareActivity  sso.ShareActivity   `json:"share_activity"`
-	Sources        []SourceDTO         `json:"sources"`
+	Version                string              `json:"version"`
+	ConnectionMode         string              `json:"connection_mode"`
+	ProxyEnabled           bool                `json:"proxy_enabled"`
+	SSOConnected           bool                `json:"sso_connected"`
+	SSOIsAdmin             bool                `json:"sso_is_admin"`
+	SSOUserID              int64               `json:"sso_user_id"`
+	ActiveSource           string              `json:"active_source"`
+	Online                 []string            `json:"online"`
+	EQDirectory            string              `json:"eq_directory"`
+	Listen                 string              `json:"listen"`
+	AllowOfflineEQPassword bool                `json:"allow_offline_eq_password"`
+	SSOAccounts            []sso.AccountMeta   `json:"sso_accounts"`
+	SSOOnline              []sso.OnlineEntry   `json:"sso_online"`
+	SSODirectory           []sso.DirectoryUser `json:"sso_directory"`
+	SSOGroups              []sso.GroupDetail   `json:"sso_groups"`
+	SSORoles               []sso.DiscordRole   `json:"sso_roles"`
+	SSOAdminUsers          []sso.AdminUser     `json:"sso_admin_users"`
+	SSOAdminRoles          []sso.DiscordRole   `json:"sso_admin_roles"`
+	ShareActivity          sso.ShareActivity   `json:"share_activity"`
+	Sources                []SourceDTO         `json:"sources"`
 }
 
 // SourceDTO is a token-safe view of an SSO source for the UI.
@@ -632,25 +640,26 @@ func (a *App) GetStatus() StatusDTO {
 		adminRoles = admin.Roles
 	}
 	return StatusDTO{
-		Version:        Version,
-		ConnectionMode: string(mode),
-		ProxyEnabled:   a.proxy != nil,
-		SSOConnected:   connected,
-		SSOIsAdmin:     isAdmin,
-		SSOUserID:      userID,
-		ActiveSource:   cfg.ActiveSourceID,
-		Online:         online,
-		EQDirectory:    cfg.EQDirectory,
-		Listen:         cfg.ListenAddr,
-		SSOAccounts:    accounts,
-		SSOOnline:      st.Online,
-		SSODirectory:   directory,
-		SSOGroups:      groups,
-		SSORoles:       roles,
-		SSOAdminUsers:  adminUsers,
-		SSOAdminRoles:  adminRoles,
-		ShareActivity:  shareAct,
-		Sources:        safeSources,
+		Version:                Version,
+		ConnectionMode:         string(mode),
+		ProxyEnabled:           a.proxy != nil,
+		SSOConnected:           connected,
+		SSOIsAdmin:             isAdmin,
+		SSOUserID:              userID,
+		ActiveSource:           cfg.ActiveSourceID,
+		Online:                 online,
+		EQDirectory:            cfg.EQDirectory,
+		Listen:                 cfg.ListenAddr,
+		AllowOfflineEQPassword: cfg.AllowOfflineEQPassword,
+		SSOAccounts:            accounts,
+		SSOOnline:              st.Online,
+		SSODirectory:           directory,
+		SSOGroups:              groups,
+		SSORoles:               roles,
+		SSOAdminUsers:          adminUsers,
+		SSOAdminRoles:          adminRoles,
+		ShareActivity:          shareAct,
+		Sources:                safeSources,
 	}
 }
 
@@ -1770,6 +1779,21 @@ func (a *App) SetListenPort(port int) error {
 	return a.SetListenAddr(fmt.Sprintf("127.0.0.1:%d", port))
 }
 
+// SetAllowOfflineEQPassword opts into sending typed EQ credentials to the
+// login server when Login w/ SSO is on but Alfred is disconnected. Local CSV
+// accounts are not affected. While SSO is connected, unknown names are never
+// forwarded through the relay.
+func (a *App) SetAllowOfflineEQPassword(enabled bool) error {
+	if a.cfg == nil {
+		return nil
+	}
+	if err := a.cfg.Update(func(c *sources.Config) { c.AllowOfflineEQPassword = enabled }); err != nil {
+		return a.logResult("allow offline EQ password", err, "enabled", enabled)
+	}
+	a.logInfo("allow offline EQ password", "enabled", enabled)
+	return nil
+}
+
 func (a *App) StartProxy() error {
 	return a.SetConnectionMode(string(sources.ConnectionLoginSSO))
 }
@@ -1782,7 +1806,18 @@ func (a *App) startProxy(showEqhostDialog bool) error {
 		a.stopProxyRuntime(false)
 	}
 	cfg := a.cfg.Get()
-	r := &router.Router{Local: a.local, SSO: a.sso, Log: a.log, BusyFn: a.busyLocal}
+	r := &router.Router{
+		Local:  a.local,
+		SSO:    a.sso,
+		Log:    a.log,
+		BusyFn: a.busyLocal,
+		SSOModeFn: func() bool {
+			return a.cfg != nil && a.cfg.Mode().WantsSSO()
+		},
+		AllowOfflinePasswordFn: func() bool {
+			return a.cfg != nil && a.cfg.Get().AllowOfflineEQPassword
+		},
+	}
 	if a.sso != nil {
 		a.sso.SetLoginRelayDown(func(pkt []byte) {
 			if a.proxy != nil {

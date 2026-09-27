@@ -39,6 +39,20 @@ type Router struct {
 	SSO    SSOAuth
 	Log    *slog.Logger
 	BusyFn func() map[string]bool // local account names busy
+	// SSOModeFn reports Login w/ SSO. Offline typed-password passthrough is
+	// gated only in that mode; Login Only still always passthrough.
+	SSOModeFn func() bool
+	// AllowOfflinePasswordFn is the Settings opt-in for sending typed EQ
+	// credentials to the login server when SSO is down.
+	AllowOfflinePasswordFn func() bool
+}
+
+func (r *Router) ssoMode() bool {
+	return r != nil && r.SSOModeFn != nil && r.SSOModeFn()
+}
+
+func (r *Router) allowOfflinePassword() bool {
+	return r != nil && r.AllowOfflinePasswordFn != nil && r.AllowOfflinePasswordFn()
 }
 
 func (r *Router) HandleLoginPacket(ctx context.Context, login *protocol.LoginPacket) Result {
@@ -69,6 +83,18 @@ func (r *Router) HandleLoginPacket(ctx context.Context, login *protocol.LoginPac
 		return Result{Decision: DecisionFail, Message: "local alias busy; not found on SSO"}
 	}
 
+	if r.SSO != nil && r.SSO.Connected() {
+		return Result{
+			Decision: DecisionFail,
+			Message:  "not an SSO or local account; will not send this password through Alfred",
+		}
+	}
+	if r.ssoMode() && !r.allowOfflinePassword() {
+		return Result{
+			Decision: DecisionFail,
+			Message:  "SSO is disconnected; enable EQ password login in Settings, or use a local account",
+		}
+	}
 	return Result{Decision: DecisionPassthrough, Packet: login.Buf}
 }
 

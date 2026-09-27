@@ -33,6 +33,7 @@ import {
   SetConnectionMode,
   SetEQDirectory,
   SetListenPort,
+  SetAllowOfflineEQPassword,
   DeleteSource,
   ShareLocalAccount,
   UnshareLocalAccount,
@@ -1744,6 +1745,28 @@ export default function App() {
                 </button>
               </div>
               <p className="hint">Default 6998. Changing the port while the proxy is on will restart it.</p>
+
+              <h2 className="sub">EQ password when SSO is down</h2>
+              <p className="hint">
+                While Alfred is connected, Login w/ SSO sends a junk password to the server and the vault password is used there. Local CSV accounts always log in on this machine and are not affected.
+              </p>
+              <label className="checkbox-inline">
+                <input
+                  type="checkbox"
+                  checked={!!status?.allow_offline_eq_password}
+                  disabled={busy}
+                  onChange={(e) => {
+                    const enabled = e.target.checked
+                    run(async () => {
+                      await SetAllowOfflineEQPassword(enabled)
+                    })
+                  }}
+                />
+                Allow EQ password login when SSO is disconnected
+              </label>
+              <p className="hint">
+                If Alfred cannot reach the SSO server, send whatever you type in EverQuest straight to the login server. Leave this off if you are not comfortable putting a real EQ password on this machine when SSO is down.
+              </p>
 
               <h2 className="sub">Updates</h2>
               <p className="hint">

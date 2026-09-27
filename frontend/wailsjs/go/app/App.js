@@ -42,12 +42,12 @@ export function GetEqHostState() {
   return window['go']['app']['App']['GetEqHostState']();
 }
 
-export function GetLocalAccounts() {
-  return window['go']['app']['App']['GetLocalAccounts']();
-}
-
 export function GetLocalAccountPassword(arg1) {
   return window['go']['app']['App']['GetLocalAccountPassword'](arg1);
+}
+
+export function GetLocalAccounts() {
+  return window['go']['app']['App']['GetLocalAccounts']();
 }
 
 export function GetLocalCharacters() {
@@ -184,6 +184,10 @@ export function ScanP99LoginProxyInstalls() {
 
 export function SetActiveSource(arg1) {
   return window['go']['app']['App']['SetActiveSource'](arg1);
+}
+
+export function SetAllowOfflineEQPassword(arg1) {
+  return window['go']['app']['App']['SetAllowOfflineEQPassword'](arg1);
 }
 
 export function SetConnectionMode(arg1) {

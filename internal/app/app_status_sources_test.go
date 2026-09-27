@@ -16,7 +16,7 @@ func TestGetStatusReflectsConfig(t *testing.T) {
 	if st.Version != Version || st.ConnectionMode != string(sources.ConnectionDisabled) {
 		t.Fatalf("%+v", st)
 	}
-	if st.SSOConnected || st.ProxyEnabled {
+	if st.SSOConnected || st.ProxyEnabled || st.AllowOfflineEQPassword {
 		t.Fatal("expected disconnected idle status")
 	}
 }
@@ -164,5 +164,25 @@ func TestSetListenPortAndStopProxy(t *testing.T) {
 	a.StopProxy()
 	if a.proxy != nil || a.cfg.Mode() != sources.ConnectionDisabled {
 		t.Fatalf("proxy=%v mode=%s", a.proxy, a.cfg.Mode())
+	}
+}
+
+func TestSetAllowOfflineEQPassword(t *testing.T) {
+	a, _ := testAppWithConfig(t)
+	a.sso = sso.NewClient()
+	if a.GetStatus().AllowOfflineEQPassword {
+		t.Fatal("expected default off")
+	}
+	if err := a.SetAllowOfflineEQPassword(true); err != nil {
+		t.Fatal(err)
+	}
+	if !a.cfg.Get().AllowOfflineEQPassword || !a.GetStatus().AllowOfflineEQPassword {
+		t.Fatal("expected enabled")
+	}
+	if err := a.SetAllowOfflineEQPassword(false); err != nil {
+		t.Fatal(err)
+	}
+	if a.cfg.Get().AllowOfflineEQPassword {
+		t.Fatal("expected disabled")
 	}
 }

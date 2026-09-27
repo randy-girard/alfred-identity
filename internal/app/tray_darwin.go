@@ -11,6 +11,7 @@ void AIStatusItemStart(const char *tooltip, const unsigned char *png, int pngLen
 void AIStatusItemStop(void);
 void AISetDockVisible(int visible);
 void AIForceShowMainWindow(void);
+void AIWaitMainQueue(void);
 */
 import "C"
 import (
@@ -53,6 +54,12 @@ func (a *App) hideWindow() {
 // when only the menu-bar status item is visible.
 func (a *App) activateForNativeDialog() {
 	C.AISetDockVisible(1)
+}
+
+// waitForNativeDialogPrep drains AppKit work queued by activate/show so the alert
+// is presented after the main window is already key, not while it is still coming forward.
+func (a *App) waitForNativeDialogPrep() {
+	C.AIWaitMainQueue()
 }
 
 func (a *App) OnBeforeClose(_ context.Context) bool {
