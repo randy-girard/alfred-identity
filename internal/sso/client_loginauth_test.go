@@ -698,6 +698,32 @@ func TestShareAccountRoundTrip(t *testing.T) {
 	}
 }
 
+func TestConnectAcceptsFullStateOverDefaultWSLimit(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	pad := strings.Repeat("x", 40_000)
+	wsURL, cleanup := startMockSSOServer(t, func(typ string, _ []byte) map[string]any {
+		if typ == "auth" || typ == "get_state" {
+			msg := fullStateMessage(false)
+			msg["pad"] = pad
+			return msg
+		}
+		return nil
+	})
+	defer cleanup()
+
+	c := NewClient()
+	if err := c.Connect(ctx, wsURL, "token", "gui/test"); err != nil {
+		t.Fatal(err)
+	}
+	defer c.Disconnect()
+	waitForSSOState(t, c, false)
+	if !c.Connected() {
+		t.Fatal("expected to stay connected after oversized full_state")
+	}
+}
+
 func TestLoginRelayDownInvokesHandler(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

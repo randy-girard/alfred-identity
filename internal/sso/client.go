@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -16,6 +17,11 @@ import (
 )
 
 const ProtocolVersion = 1
+
+// maxWSReadBytes is the max inbound WS message size. coder/websocket defaults
+// to 32 KiB, which is smaller than a production full_state (accounts +
+// directory + groups + admin) and drops the socket right after auth.
+const maxWSReadBytes = 4 << 20
 
 type AccountMeta struct {
 	ID              int64    `json:"id"`
@@ -150,6 +156,14 @@ type Client struct {
 	keepaliveEvery time.Duration
 	downMu         sync.Mutex
 	downHandler    func([]byte)
+	log            *slog.Logger
+}
+
+// SetLogger records websocket close errors in the GUI log.
+func (c *Client) SetLogger(log *slog.Logger) {
+	c.mu.Lock()
+	c.log = log
+	c.mu.Unlock()
 }
 
 func NewClient() *Client {
@@ -356,6 +370,7 @@ func (c *Client) Connect(parent context.Context, wsURL, token, clientVersion str
 		cancel()
 		return err
 	}
+	conn.SetReadLimit(maxWSReadBytes)
 
 	c.mu.Lock()
 	c.conn = conn
@@ -443,7 +458,11 @@ func (c *Client) readLoop(ctx context.Context) {
 			c.mu.Lock()
 			c.connected = false
 			c.isAdmin = false
+			log := c.log
 			c.mu.Unlock()
+			if log != nil && ctx.Err() == nil {
+				log.Warn("sso websocket closed", "err", err)
+			}
 			return
 		}
 		var tip struct {

@@ -128,10 +128,13 @@ var globalApp *App
 
 func New() *App {
 	buf := logbuf.New(3000)
+	log := slog.New(logbuf.NewHandler(buf, os.Stdout))
+	ssoClient := sso.NewClient()
+	ssoClient.SetLogger(log)
 	a := &App{
 		logBuf: buf,
-		log:    slog.New(logbuf.NewHandler(buf, os.Stdout)),
-		sso:    sso.NewClient(),
+		log:    log,
+		sso:    ssoClient,
 	}
 	globalApp = a
 	return a
