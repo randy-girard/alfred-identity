@@ -85,8 +85,8 @@ Open `coverage/index.html` in a browser.
 ### First-time setup
 
 1. **Start the backend** (guild daemon), e.g. from `alfred-identity-backend`: `docker compose up --build`
-2. **Create an SSO token** in Discord (`/alfred-identity-sso create`) or with `go run ./cmd/seedtoken …` when Discord is disabled
-3. **Add an SSO source** in Alfred Identity → **Connections** → paste the JSON from `/alfred-identity-sso get` → **Add from JSON** (or **Manage sources…** → **Add manually**)
+2. **Create an SSO token** in Discord (`/alfred-identity-sso get`) or with `go run ./cmd/seedtoken …` when Discord is disabled
+3. **Add an SSO source** in Alfred Identity: click **Open in Alfred Identity** in the Discord reply (or **Connections** → paste JSON → **Add from JSON**). A second click for the same host updates that source instead of adding another.
 4. Set **Connection mode** to **Login w/ SSO**
 5. **EverQuest** tab → **Browse…** → pick your install folder → **Save path**
 6. When the proxy starts, the app can rewrite `eqhost.txt` to point at the local listener — **restart EverQuest** after eqhost changes
@@ -107,6 +107,7 @@ Set on **Connections** (or the status bar at the bottom):
 
 - Stored in `config.json` under your OS user config dir (see [Config files](#config-files))
 - **Connections** lists sources; click **Use this source** to activate one
+- Importing the same daemon again (same host) updates that source’s name and token; a different host adds a new source
 - Only the **active** source is connected when mode is **Login w/ SSO**
 - Host is `host:port` only — the app builds `ws://` or `wss://` + `/ws/sso` when connecting (`ws` for localhost/LAN, `wss` for public hosts)
 

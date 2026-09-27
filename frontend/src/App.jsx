@@ -502,6 +502,13 @@ export default function App() {
   }, [refresh, refreshLocal, applyUpdateInfo])
 
   useEffect(() => {
+    return EventsOn('source-imported', () => {
+      refresh()
+      setTab('proxy')
+    })
+  }, [refresh])
+
+  useEffect(() => {
     if (tab !== 'eq') return
     GetEqHostState()
       .then((st) => {
@@ -1013,8 +1020,9 @@ export default function App() {
                 <div className="source-dropzone empty-cta">
                   <h3>Add your first SSO source</h3>
                   <p>
-                    Run <code>/alfred-identity-sso get</code> in Discord, copy the Alfred Identity
-                    source JSON, paste it below, then set Connection mode to Login w/ SSO.
+                    Run <code>/alfred-identity-sso get</code> in Discord and click
+                    <strong>Open in Alfred Identity</strong>, or paste the source JSON below, then
+                    set Connection mode to Login w/ SSO.
                   </p>
                   <div className="source-json-row">
                     <textarea
@@ -2251,8 +2259,9 @@ export default function App() {
             {!sourceForm ? (
               <>
                 <p className="hint">
-                  Paste source JSON from Discord <code>/alfred-identity-sso get</code>, or enter
-                  details manually. On the Connections tab, pick which source is active.
+                  Paste source JSON from Discord <code>/alfred-identity-sso get</code>, or click
+                  <strong>Open in Alfred Identity</strong> in that reply. On the Connections tab,
+                  pick which source is active.
                 </p>
                 <div className="source-json-row compact">
                   <textarea

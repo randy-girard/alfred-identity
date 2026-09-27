@@ -53,6 +53,7 @@ func main() {
 				Title:   app.AppName,
 				Message: "Local login proxy + SSO\nVersion " + app.Version,
 			},
+			OnUrlOpen: a.HandleOpenURL,
 		},
 	})
 	if err != nil {

@@ -3,6 +3,8 @@ package app
 import (
 	"os"
 	"path/filepath"
+
+	"github.com/alfred-identity/app/internal/sources"
 )
 
 const instanceLockName = "instance.lock"
@@ -11,6 +13,10 @@ const instanceLockName = "instance.lock"
 // holds it, shows an error dialog and returns false.
 func EnsureSingleInstance() bool {
 	if err := acquireInstanceLock(); err != nil {
+		if raw := sources.DeepLinkFromArgs(os.Args[1:]); raw != "" {
+			_ = writePendingDeepLink(raw)
+			return false
+		}
 		showAlreadyRunningError()
 		return false
 	}

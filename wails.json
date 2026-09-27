@@ -9,5 +9,16 @@
   "author": {
     "name": "alfred-identity",
     "email": ""
+  },
+  "info": {
+    "companyName": "alfred-identity",
+    "productName": "Alfred Identity",
+    "protocols": [
+      {
+        "scheme": "alfred-identity",
+        "description": "Alfred Identity SSO source",
+        "role": "Viewer"
+      }
+    ]
   }
 }

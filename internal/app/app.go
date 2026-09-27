@@ -121,6 +121,11 @@ type App struct {
 	watcher  *logwatch.Watcher
 	hbCancel context.CancelFunc
 	quitting atomic.Bool
+
+	deepLinkMu      sync.Mutex
+	pendingDeepLink string
+	lastDeepLink    string
+	lastDeepLinkAt  time.Time
 }
 
 // globalApp lets the macOS status-item C callbacks reach the running App.
@@ -239,6 +244,12 @@ func (a *App) Startup(ctx context.Context) {
 	go a.heartbeatLoop(hbCtx)
 	go a.ssoReconnectLoop(hbCtx)
 	go a.updateCheckLoop(hbCtx)
+
+	registerAppProtocol()
+	if raw := sources.DeepLinkFromArgs(os.Args[1:]); raw != "" {
+		go a.applySourceDeepLink(raw)
+	}
+	go a.pendingDeepLinkLoop(hbCtx.Done())
 }
 
 func (a *App) Shutdown(ctx context.Context) {
@@ -1425,7 +1436,15 @@ func (a *App) SaveSource(src sources.Source) (SourceDTO, error) {
 	}
 	isNew := src.ID == ""
 	if isNew {
-		src.ID = fmt.Sprintf("%d", time.Now().UnixNano())
+		if existing, ok := sources.FindByHost(a.cfg.Get().Sources, src.Host); ok {
+			src.ID = existing.ID
+			isNew = false
+			if strings.TrimSpace(src.Notes) == "" {
+				src.Notes = existing.Notes
+			}
+		} else {
+			src.ID = fmt.Sprintf("%d", time.Now().UnixNano())
+		}
 	}
 	if isNew && strings.TrimSpace(src.Token) == "" {
 		return SourceDTO{}, fmt.Errorf("token required for a new source")

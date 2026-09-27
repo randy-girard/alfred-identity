@@ -54,9 +54,8 @@ func (a *App) quitApp() {
 	}
 }
 
-func (a *App) OnSecondInstanceLaunch(_ options.SecondInstanceData) {
-	showAlreadyRunningError()
-	a.showWindow()
+func (a *App) OnSecondInstanceLaunch(data options.SecondInstanceData) {
+	a.handleSecondInstance(data)
 }
 
 func (a *App) startTray() {}

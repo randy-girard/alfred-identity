@@ -217,6 +217,20 @@ func (m *Manager) Active() (Source, bool) {
 	return Source{}, false
 }
 
+// FindByHost returns the first source with the same normalized host (case-insensitive).
+func FindByHost(list []Source, host string) (Source, bool) {
+	want := strings.ToLower(NormalizeHost(host))
+	if want == "" {
+		return Source{}, false
+	}
+	for _, s := range list {
+		if strings.ToLower(NormalizeHost(s.Host)) == want {
+			return s, true
+		}
+	}
+	return Source{}, false
+}
+
 // UpsertSource adds or updates a source. Empty Token on update keeps the previous
 // token unless the host changed (then the token must be re-pasted).
 func (m *Manager) UpsertSource(src Source, previousHost string) error {

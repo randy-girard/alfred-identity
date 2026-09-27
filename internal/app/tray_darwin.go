@@ -85,10 +85,8 @@ func (a *App) quitApp() {
 	}
 }
 
-func (a *App) OnSecondInstanceLaunch(_ options.SecondInstanceData) {
-	// Wails exits the second process silently; tell the user and focus this one.
-	showAlreadyRunningError()
-	a.showWindow()
+func (a *App) OnSecondInstanceLaunch(data options.SecondInstanceData) {
+	a.handleSecondInstance(data)
 }
 
 //export aiGoShow

@@ -2,6 +2,27 @@ package sources
 
 import "testing"
 
+func TestFindByHost(t *testing.T) {
+	list := []Source{
+		{ID: "1", Name: "A", Host: "identity.example.com"},
+		{ID: "2", Name: "B", Host: "other.example.com:443"},
+	}
+	got, ok := FindByHost(list, "IDENTITY.EXAMPLE.COM")
+	if !ok || got.ID != "1" {
+		t.Fatalf("case-insensitive host: %+v ok=%v", got, ok)
+	}
+	got, ok = FindByHost(list, "wss://other.example.com:443/ws/sso")
+	if !ok || got.ID != "2" {
+		t.Fatalf("normalized host: %+v ok=%v", got, ok)
+	}
+	if _, ok := FindByHost(list, "missing.example.com"); ok {
+		t.Fatal("expected miss")
+	}
+	if _, ok := FindByHost(nil, ""); ok {
+		t.Fatal("empty host")
+	}
+}
+
 func TestNormalizeHost(t *testing.T) {
 	cases := map[string]string{
 		"127.0.0.1:8181":                 "127.0.0.1:8181",
