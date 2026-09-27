@@ -10,11 +10,11 @@ import (
 	"github.com/alfred-identity/app/internal/router"
 )
 
-// LoginRelay sends SOE datagrams to the daemon (which owns the EQ login UDP
-// socket) and receives downlink packets to inject as if they came from upstream.
+// LoginRelay splices vault credentials on the daemon. EQ login UDP still
+// originates from this machine so world transfer sees the player's IP.
 type LoginRelay interface {
 	Active() bool
-	SendUpstream(pkt []byte, splice bool) error
+	SpliceLogin(pkt []byte) ([]byte, error)
 }
 
 // Server is a UDP middleman between EQ client and the login server.
@@ -70,9 +70,9 @@ func (s *Server) Start(parent context.Context) error {
 	s.runCtx = ctx
 	s.mu.Unlock()
 
-	via := "direct UDP"
+	via := "direct UDP to EQ login"
 	if s.relayActive() {
-		via = "SSO login relay (daemon owns EQ login UDP)"
+		via = "direct UDP to EQ login (SSO vault splice)"
 	}
 	log.Info("UDP login proxy listening",
 		"configured", s.Listen,
@@ -123,7 +123,7 @@ func (s *Server) Start(parent context.Context) error {
 				return
 			case <-t.C:
 				if pkt := engine.UpstreamKeepalivePacket(); pkt != nil {
-					if err := s.sendUpstream(pkt, false); err != nil {
+					if err := s.sendUpstream(pkt); err != nil {
 						log.Warn("idle keepalive to upstream failed", "err", err)
 					}
 				}
@@ -141,18 +141,35 @@ func (s *Server) relayActive() bool {
 }
 
 func (s *Server) dispatch(engine *Engine, upAddr *net.UDPAddr, actions Actions) {
-	for _, out := range engine.Finalize(actions.SendUpstream) {
-		if err := s.sendUpstream(out, actions.SpliceSSO); err != nil && s.Log != nil {
+	pkts := actions.SendUpstream
+	if actions.SpliceSSO {
+		if !s.relayActive() {
+			if s.Log != nil {
+				s.Log.Warn("SSO splice required but SSO is disconnected; not forwarding")
+			}
+			return
+		}
+		if len(pkts) == 0 {
+			return
+		}
+		spliced, err := s.Relay.SpliceLogin(pkts[0])
+		if err != nil {
+			if s.Log != nil {
+				s.Log.Warn("SSO splice failed", "err", err)
+			}
+			return
+		}
+		pkts = [][]byte{spliced}
+	}
+	for _, out := range engine.Finalize(pkts) {
+		if err := s.sendUpstream(out); err != nil && s.Log != nil {
 			s.Log.Warn("send to upstream failed", "err", err)
 		}
 	}
 	_ = upAddr
 }
 
-func (s *Server) sendUpstream(pkt []byte, splice bool) error {
-	if s.relayActive() {
-		return s.Relay.SendUpstream(pkt, splice)
-	}
+func (s *Server) sendUpstream(pkt []byte) error {
 	s.mu.Lock()
 	c := s.conn
 	up := s.upAddr

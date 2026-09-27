@@ -1748,7 +1748,7 @@ export default function App() {
 
               <h2 className="sub">EQ password when SSO is down</h2>
               <p className="hint">
-                While Alfred is connected, Login w/ SSO sends a junk password to the server and the vault password is used there. Local CSV accounts always log in on this machine and are not affected.
+                While Alfred is connected, Login w/ SSO replaces what you type with the vault password, then this computer talks to the EQ login server so world transfer uses your IP. Local CSV accounts always log in on this machine and are not affected.
               </p>
               <label className="checkbox-inline">
                 <input

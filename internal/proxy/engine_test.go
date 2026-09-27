@@ -305,7 +305,7 @@ func TestEngineHandleClientSSOSetsSpliceFlag(t *testing.T) {
 		t.Fatalf("upstream=%d", len(actions.SendUpstream))
 	}
 	if !actions.SpliceSSO {
-		t.Fatal("SSO login must mark splice for the daemon relay")
+		t.Fatal("SSO login must mark splice for the daemon")
 	}
 	parsed, ok := protocol.ParseLoginPacket(actions.SendUpstream[0])
 	if !ok || parsed.Password != "pass" {

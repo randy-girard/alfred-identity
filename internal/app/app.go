@@ -1821,13 +1821,6 @@ func (a *App) startProxy(showEqhostDialog bool) error {
 			return a.cfg != nil && a.cfg.Get().AllowOfflineEQPassword
 		},
 	}
-	if a.sso != nil {
-		a.sso.SetLoginRelayDown(func(pkt []byte) {
-			if a.proxy != nil {
-				a.proxy.InjectFromLoginServer(pkt)
-			}
-		})
-	}
 	a.proxy = &proxy.Server{
 		Listen: cfg.ListenAddr, Upstream: cfg.UpstreamAddr, Router: r, Log: a.log,
 	}

@@ -110,8 +110,8 @@ func (r *Router) loginViaSSO(ctx context.Context, login *protocol.LoginPacket, t
 		}
 		return Result{Decision: DecisionFail, Message: "sso: " + res.Error}
 	}
-	// Daemon splices vault credentials on its UDP socket. Forward the alias
-	// packet unchanged so the workstation never holds the real password.
+	// Daemon splices vault credentials; this machine UDP-sends so login/world
+	// see the player's IP. Forward the alias packet unchanged until splice.
 	return Result{Decision: DecisionSSO, Packet: login.Buf}
 }
 

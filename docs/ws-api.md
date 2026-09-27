@@ -23,11 +23,17 @@ Re-sends `full_state` for the authenticated user (after Discord group/account ch
 ```
 Daemon authorizes the login (ACL + busy). Success does **not** include credentials.
 
+### `login_splice`
+```json
+{ "type": "login_splice", "request_id": "uuid", "payload": "<base64 CRC-stripped Combined login>" }
+```
+GUI asks the daemon to rewrite vault credentials. The GUI then UDP-sends the result from the player machine.
+
 ### `login_relay_up`
 ```json
 { "type": "login_relay_up", "payload": "<base64 SOE datagram>", "splice": true }
 ```
-GUI tunnels login-server UDP through the daemon. `splice` is true only for the Combined login packet.
+Legacy: tunnels login-server UDP through the daemon (login appears to come from the VPS IP; world transfer then fails). New GUI uses `login_splice` instead.
 
 ### `heartbeat`
 ```json
@@ -70,6 +76,12 @@ Error:
 ```json
 { "type": "login_auth_response", "request_id": "uuid", "error": "not_found|all_busy|rate_limited|internal" }
 ```
+
+### `login_splice_result`
+```json
+{ "type": "login_splice_result", "request_id": "uuid", "payload": "<base64 CRC-stripped Combined login>", "error": "" }
+```
+Daemon → GUI. GUI UDP-sends `payload` to the EQ login server. `error` is set on drop (`rate_limited`, `all_busy`, `bad_payload`, …).
 
 ### `login_relay_down`
 ```json

@@ -133,6 +133,11 @@ type AdminResult struct {
 	Error     string
 }
 
+type SpliceResult struct {
+	Packet []byte
+	Error  string
+}
+
 type Client struct {
 	mu          sync.Mutex
 	writeMu     sync.Mutex
@@ -150,6 +155,7 @@ type Client struct {
 	cancel      context.CancelFunc
 	waiters     map[string]chan LoginAuthResult
 	adminWait   map[string]chan AdminResult
+	spliceWait  map[string]chan SpliceResult
 	stateWait   []chan struct{}
 	connected   bool
 	// keepaliveEvery overrides the default ping interval when > 0 (tests).
@@ -168,8 +174,9 @@ func (c *Client) SetLogger(log *slog.Logger) {
 
 func NewClient() *Client {
 	return &Client{
-		waiters:   make(map[string]chan LoginAuthResult),
-		adminWait: make(map[string]chan AdminResult),
+		waiters:    make(map[string]chan LoginAuthResult),
+		adminWait:  make(map[string]chan AdminResult),
+		spliceWait: make(map[string]chan SpliceResult),
 	}
 }
 
@@ -387,6 +394,7 @@ func (c *Client) Connect(parent context.Context, wsURL, token, clientVersion str
 	c.displayName = ""
 	c.waiters = make(map[string]chan LoginAuthResult)
 	c.adminWait = make(map[string]chan AdminResult)
+	c.spliceWait = make(map[string]chan SpliceResult)
 	c.mu.Unlock()
 
 	if strings.TrimSpace(clientVersion) == "" {
@@ -577,6 +585,28 @@ func (c *Client) readLoop(ctx context.Context) {
 				default:
 				}
 			}
+		case "login_splice_result":
+			var resp struct {
+				RequestID string `json:"request_id"`
+				Payload   string `json:"payload"`
+				Error     string `json:"error"`
+			}
+			if json.Unmarshal(data, &resp) != nil {
+				continue
+			}
+			pkt, err := base64.StdEncoding.DecodeString(resp.Payload)
+			if err != nil {
+				pkt = nil
+			}
+			c.mu.Lock()
+			ch := c.spliceWait[resp.RequestID]
+			c.mu.Unlock()
+			if ch != nil {
+				select {
+				case ch <- SpliceResult{Packet: pkt, Error: resp.Error}:
+				default:
+				}
+			}
 		case "login_relay_down":
 			var resp struct {
 				Payload string `json:"payload"`
@@ -647,7 +677,7 @@ func (c *Client) SetLoginRelayDown(fn func([]byte)) {
 	c.downMu.Unlock()
 }
 
-// Active reports whether SSO is connected and can tunnel login UDP.
+// Active reports whether SSO can splice vault credentials for a Combined login.
 func (c *Client) Active() bool {
 	if c == nil {
 		return false
@@ -655,22 +685,50 @@ func (c *Client) Active() bool {
 	return c.Connected()
 }
 
-// SendUpstream tunnels a wire SOE datagram to the daemon login relay.
-func (c *Client) SendUpstream(pkt []byte, splice bool) error {
+// SpliceLogin asks the daemon to rewrite a CRC-stripped Combined login with
+// vault credentials. The GUI then UDP-sends the result from this machine.
+func (c *Client) SpliceLogin(pkt []byte) ([]byte, error) {
 	c.mu.Lock()
 	conn := c.conn
 	ok := c.connected && conn != nil
-	c.mu.Unlock()
 	if !ok {
-		return fmt.Errorf("sso login relay not connected")
+		c.mu.Unlock()
+		return nil, fmt.Errorf("sso not connected")
 	}
+	if c.spliceWait == nil {
+		c.spliceWait = make(map[string]chan SpliceResult)
+	}
+	reqID := uuid.NewString()
+	ch := make(chan SpliceResult, 1)
+	c.spliceWait[reqID] = ch
+	c.mu.Unlock()
+	defer func() {
+		c.mu.Lock()
+		delete(c.spliceWait, reqID)
+		c.mu.Unlock()
+	}()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	return c.writeJSON(ctx, conn, map[string]any{
-		"type":    "login_relay_up",
-		"payload": base64.StdEncoding.EncodeToString(pkt),
-		"splice":  splice,
-	})
+	if err := c.writeJSON(ctx, conn, map[string]any{
+		"type":       "login_splice",
+		"request_id": reqID,
+		"payload":    base64.StdEncoding.EncodeToString(pkt),
+	}); err != nil {
+		return nil, err
+	}
+	select {
+	case res := <-ch:
+		if res.Error != "" {
+			return nil, fmt.Errorf("sso splice: %s", res.Error)
+		}
+		if len(res.Packet) == 0 {
+			return nil, fmt.Errorf("sso splice: empty packet")
+		}
+		return res.Packet, nil
+	case <-ctx.Done():
+		return nil, fmt.Errorf("sso splice timeout")
+	}
 }
 
 func (c *Client) LoginAuth(ctx context.Context, requestID, username string) (LoginAuthResult, error) {

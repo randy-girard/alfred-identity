@@ -3,10 +3,13 @@ package proxy
 import (
 	"context"
 	"net"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/alfred-identity/app/internal/localdata"
 	"github.com/alfred-identity/app/internal/protocol"
+	"github.com/alfred-identity/app/internal/router"
 )
 
 func TestRelayBidirectional(t *testing.T) {
@@ -158,6 +161,76 @@ func TestNormalizeAddr(t *testing.T) {
 	v6 := &net.UDPAddr{IP: net.ParseIP("2001:db8::1"), Port: 1}
 	if normalizeAddr(v6) != v6 {
 		t.Fatal("non-mapped v6 should pass through")
+	}
+}
+
+type testSpliceRelay struct {
+	out []byte
+}
+
+func (t testSpliceRelay) Active() bool { return true }
+func (t testSpliceRelay) SpliceLogin(pkt []byte) ([]byte, error) {
+	if t.out != nil {
+		return t.out, nil
+	}
+	return pkt, nil
+}
+
+func TestSSOSpliceSendsFromLocalUDP(t *testing.T) {
+	upstream, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer upstream.Close()
+	upAddr := upstream.LocalAddr().(*net.UDPAddr)
+
+	dir := t.TempDir()
+	store := &localdata.Store{
+		AccountsPath:   filepath.Join(dir, "a.csv"),
+		CharactersPath: filepath.Join(dir, "c.csv"),
+	}
+	spliced := []byte("spliced-from-daemon")
+	srv := &Server{
+		Listen:   "127.0.0.1:0",
+		Upstream: upAddr.String(),
+		Router: &router.Router{
+			Local: store,
+			SSO: engineFakeSSO{
+				connected: true,
+				names:     map[string]bool{"user": true},
+			},
+		},
+		Relay: testSpliceRelay{out: spliced},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := srv.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Stop()
+
+	srv.mu.Lock()
+	proxyAddr := srv.conn.LocalAddr().(*net.UDPAddr)
+	srv.mu.Unlock()
+
+	client, err := net.DialUDP("udp", nil, proxyAddr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	if _, err := client.Write(combinedLoginPacket(t)); err != nil {
+		t.Fatal(err)
+	}
+
+	buf := make([]byte, 65535)
+	_ = upstream.SetReadDeadline(time.Now().Add(2 * time.Second))
+	n, _, err := upstream.ReadFromUDP(buf)
+	if err != nil {
+		t.Fatalf("upstream read: %v", err)
+	}
+	if string(buf[:n]) != string(spliced) {
+		t.Fatalf("upstream got %q want %q", buf[:n], spliced)
 	}
 }
 

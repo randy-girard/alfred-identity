@@ -724,31 +724,28 @@ func TestConnectAcceptsFullStateOverDefaultWSLimit(t *testing.T) {
 	}
 }
 
-func TestLoginRelayDownInvokesHandler(t *testing.T) {
+func TestSpliceLoginRoundTrip(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	up := make(chan []byte, 1)
+	orig := []byte{0x00, 0x03, 0x01, 0x02, 0x03}
 	wsURL, cleanup := startMockSSOServer(t, func(typ string, data []byte) map[string]any {
 		switch typ {
 		case "auth":
 			return fullStateMessage(false)
-		case "login_relay_up":
+		case "login_splice":
 			var msg struct {
-				Payload string `json:"payload"`
-				Splice  bool   `json:"splice"`
+				RequestID string `json:"request_id"`
+				Payload   string `json:"payload"`
 			}
 			_ = json.Unmarshal(data, &msg)
-			if !msg.Splice {
-				t.Error("expected splice=true")
-			}
-			select {
-			case up <- []byte(msg.Payload):
-			default:
+			if msg.Payload == "" || msg.RequestID == "" {
+				t.Error("expected splice payload and request_id")
 			}
 			return map[string]any{
-				"type":    "login_relay_down",
-				"payload": msg.Payload,
+				"type":       "login_splice_result",
+				"request_id": msg.RequestID,
+				"payload":    msg.Payload,
 			}
 		default:
 			return nil
@@ -757,13 +754,6 @@ func TestLoginRelayDownInvokesHandler(t *testing.T) {
 	defer cleanup()
 
 	c := NewClient()
-	got := make(chan []byte, 1)
-	c.SetLoginRelayDown(func(pkt []byte) {
-		select {
-		case got <- pkt:
-		default:
-		}
-	})
 	if err := c.Connect(ctx, wsURL, "token", "gui/test"); err != nil {
 		t.Fatal(err)
 	}
@@ -771,22 +761,13 @@ func TestLoginRelayDownInvokesHandler(t *testing.T) {
 	waitForSSOState(t, c, false)
 
 	if !c.Active() {
-		t.Fatal("expected active relay")
+		t.Fatal("expected active SSO")
 	}
-	if err := c.SendUpstream([]byte{0x00, 0x01, 0x02}, true); err != nil {
+	got, err := c.SpliceLogin(orig)
+	if err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case <-up:
-	case <-time.After(2 * time.Second):
-		t.Fatal("expected login_relay_up")
-	}
-	select {
-	case pkt := <-got:
-		if string(pkt) != string([]byte{0x00, 0x01, 0x02}) {
-			t.Fatalf("down=%x", pkt)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("expected login_relay_down handler")
+	if string(got) != string(orig) {
+		t.Fatalf("got=%x want=%x", got, orig)
 	}
 }
